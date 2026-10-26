@@ -29,7 +29,15 @@ for a in "$@"; do
   [ "$a" = --continue ] && [ "${CLAUDE_STUB_NO_CONVO:-0}" = 1 ] && { echo "No conversation found to continue"; exit 1; }
 done
 echo "claude stub running"
-exec cat
+while IFS= read -r line; do
+  echo "got:$line"
+  if [ "$line" = SUSPEND ]; then # what Claude Code does on Ctrl+Z: suspend itself, wait for fg
+    cont=""; trap 'cont=1' CONT
+    kill -TSTP $$
+    while [ -z "$cont" ]; do sleep 0.1; done
+    echo "stub resumed"
+  fi
+done
 EOF
 cat > "$TMP/stubbin/gh" <<'EOF'
 #!/bin/bash

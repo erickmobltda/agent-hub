@@ -8,7 +8,8 @@
 # go to a "msg" file that the `load` event (after every refresh) turns into the footer: a footer
 # changed while fzf reloads with tracking on would be lost.
 
-DASH_LEGEND="enter open · ^z zoom · tab actions · ^r refresh
+# No Ctrl+Z here: users then press it inside Claude, where it suspends Claude Code instead.
+DASH_LEGEND="enter open · tab actions · ^r refresh
 ^n new · ^s send · ^x close · ^o PR · ^g move"
 
 dash_next_file() { printf '%s/dash-%s.next\n' "$(runtime_dir)" "${AGENT_HUB_DASH_INST:-$$}"; }
@@ -88,7 +89,7 @@ dash_run() { # dash_run <hq|popup>
     --bind='load:transform-footer:"$AGENT_HUB_BIN" dash --footer' \
     --bind='every(5):bg-transform:[ "${FZF_IDLE_TIME:-0}" -ge 2 ] && echo "trigger(ctrl-r)"' \
     --bind='enter,double-click:transform:"$AGENT_HUB_BIN" dash --do open {1} {2} {3}' \
-    --bind='ctrl-z,alt-enter:transform:"$AGENT_HUB_BIN" dash --do zoom {1} {2} {3}' \
+    --bind='alt-enter:transform:"$AGENT_HUB_BIN" dash --do zoom {1} {2} {3}' \
     --bind='ctrl-o:transform:"$AGENT_HUB_BIN" dash --do pr {1} {2} {3} {9} {10} {14} {16}' \
     --bind='tab:execute("$AGENT_HUB_BIN" dash --do menu {1} {2} {3})+transform:"$AGENT_HUB_BIN" dash --next' \
     --bind='ctrl-n:execute("$AGENT_HUB_BIN" dash --do new {1} {2} {3})+transform:"$AGENT_HUB_BIN" dash --next' \
@@ -211,13 +212,13 @@ dash_menu() { # dash_menu <kind> <id>: the Tab menu; it only triggers the dashbo
   local kind=$1 id=$2 items choice
   case "$kind" in
     t) items="enter${TAB}open  (starts Claude again if it stopped)
-ctrl-z${TAB}open zoomed
+alt-enter${TAB}open zoomed
 ctrl-s${TAB}send a message
 ctrl-o${TAB}open the pull request
 ctrl-g${TAB}move to another group
 ctrl-x${TAB}close the task (removes its worktree)" ;;
     p) items="enter${TAB}open
-ctrl-z${TAB}open zoomed
+alt-enter${TAB}open zoomed
 ctrl-s${TAB}send a message" ;;
     *) items="enter${TAB}open" ;;
   esac

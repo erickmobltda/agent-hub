@@ -14,6 +14,21 @@ run_state() { # run_state <status>: this pane's status, as the dashboard shows i
     set -p -t "$TMUX_PANE" @agent_note "" 2>/dev/null
 }
 
+# run_fg <command...>: runs it as the foreground job of a minimal interactive bash. Claude Code
+# suspends itself on Ctrl+Z and waits for `fg`, which nothing in a task pane would ever send: the
+# pane froze (each tmux pane is its own session, so the suspend was even silently dropped). bash
+# 3.2 only gets control back from a stopped job when it is interactive, so this one is, without
+# reading any rc file, and resumes Claude at once.
+RUN_FG='set +o history
+"$@"; rc=$?
+while [ "$rc" -ge 128 ] && [ -n "$(jobs -s)" ]; do
+  printf "\r\n\033[2m[agent-hub] Ctrl+Z suspends Claude Code; resuming it (the pane below is a shell).\033[0m\r\n"
+  fg >/dev/null; rc=$?
+done
+exit "$rc"'
+
+run_fg() { /bin/bash --noprofile --norc -i -c "$RUN_FG" agent-hub "$@"; }
+
 cmd_run() { # run agent|orchestrator <name> [--resume] [-- prompt]
   local kind=${1:-} name=${2:-} resume=0 prompt="" has_prompt=0 rc start
   [ $# -ge 2 ] || die "$EX_ERR" "usage: run agent|orchestrator <name> [--resume] [-- prompt]"
@@ -43,17 +58,17 @@ EOF
     printf 'agent-hub: %s not found in PATH (%s). Run: agent-hub doctor\n' "${argv[0]}" "$PATH"
   elif [ "$resume" = 1 ]; then
     start=$SECONDS
-    "${argv[@]}" --continue
+    run_fg "${argv[@]}" --continue
     rc=$?
     if [ "$rc" -ne 0 ] && [ $((SECONDS - start)) -lt 5 ]; then
       printf '\nagent-hub: no conversation to continue here; starting a new one\n'
       run_state starting
-      "${argv[@]}"
+      run_fg "${argv[@]}"
     fi
   elif [ "$has_prompt" = 1 ]; then
-    "${argv[@]}" "$prompt"
+    run_fg "${argv[@]}" "$prompt"
   else
-    "${argv[@]}"
+    run_fg "${argv[@]}"
   fi
   run_state stopped
   printf '\n\033[2m[agent-hub] Claude exited. "claude -c" resumes it here, or press Enter on it in the hub.\033[0m\n'

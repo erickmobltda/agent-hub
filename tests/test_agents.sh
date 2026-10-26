@@ -113,6 +113,14 @@ check "open: no conversation -> starts a new one" sh -c "awk '/^---\$/{n++} n ==
 tm set-environment -gu CLAUDE_STUB_NO_CONVO
 p_infra=$(task_pane ops:infra)
 
+# --- Ctrl+Z: Claude Code suspends itself and waits for `fg`; the runner brings it back ---
+tm send-keys -t "$p_api" -l "SUSPEND"; tm send-keys -t "$p_api" Enter
+wait_for 5 screen_has "$p_api" "stub resumed"
+check "ctrl-z: a suspended Claude is resumed (the pane does not freeze)" screen_has "$p_api" "stub resumed"
+tm send-keys -t "$p_api" -l "still-alive"; tm send-keys -t "$p_api" Enter
+wait_for 3 screen_has "$p_api" "got:still-alive"
+check "ctrl-z: Claude reads input again" screen_has "$p_api" "got:still-alive"
+
 # --- send / peek ---
 tm set -p -t "$p_api" @agent_status working
 out=$("$AH" send dev/api "hello \"agent\" \$HOME" 2>&1); rc=$?

@@ -63,7 +63,7 @@ Nothing else is changed: no other options, and no other keys. Agent windows only
 |---|---|
 | type | filter by task, group, repo, state or PR |
 | Enter | open the agent (resumes Claude if it stopped) |
-| Ctrl+Z | open it zoomed |
+| Alt+Enter | open it zoomed (also in the Tab menu) |
 | Tab | menu with every action for the selected row |
 | Ctrl+N | new agent |
 | Ctrl+S | send a message to the agent without leaving the dashboard |
@@ -155,6 +155,7 @@ Exit codes: `0` ok · `1` error/usage · `2` missing dependency · `3` needs con
 - **The hub looks empty** after a reboot: run `agent-hub`, or press Ctrl+Q and pick the hub row. Both rebuild it. With tmux-resurrect it heals by itself after the restore.
 - **Ctrl+Q does nothing:** another program or key binding owns it. `agent-hub doctor` says which; pick another key with `agent-hub config set hub_key prefix:a`.
 - **An agent stays `starting`:** Claude is probably asking whether to trust the folder. Open it and answer.
+- **Ctrl+Z inside Claude** suspends Claude Code (its own shortcut; undo is Ctrl+_). In an agent pane, agent-hub brings it back at once, so nothing freezes. For shell commands use the pane below it. Agents started before this fix keep the old behavior until Claude restarts there: if one freezes, run `pkill -CONT -f 'claude --name'`.
 
 ## Tests
 
