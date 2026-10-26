@@ -16,7 +16,7 @@ h1=${heights%% *}; h2=$(echo "$heights" | cut -d' ' -f2)
 pct=$((h1 * 100 / (h1 + h2 + 1)))
 [ "$pct" -ge 60 ] && [ "$pct" -le 70 ] && ok "hq: dashboard ~65% ($pct%)" || fail "hq: dashboard ~65%" "$heights"
 wait_for 5 sh -c "ls '$AGENT_HUB_RUNTIME'/dash-hq-*.sock >/dev/null 2>&1" && ok "hq: dashboard running" || fail "hq: dashboard running"
-wait_for 5 grep -qx '<hub>' "$CLAUDE_STUB_LOG"
+wait_for 5 grep -qsx '<hub>' "$CLAUDE_STUB_LOG"
 check "hq: orchestrator gets its role as a system prompt (no first turn)" grep -qx '<--append-system-prompt>' "$CLAUDE_STUB_LOG"
 orch=$(role_pane orchestrator)
 assert_eq "$TMP/repos" "$(tm display -p -t "$orch" '#{pane_current_path}')" "hq: orchestrator cwd = first repos_root"

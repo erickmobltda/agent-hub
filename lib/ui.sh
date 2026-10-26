@@ -8,45 +8,47 @@ ui_fzf() {
 }
 
 # ui_text <var> <title> <prompt> [default] [hint]: one line of free text. 1 = cancelled.
+# (Locals start with __ so they never shadow the caller's <var>.)
 ui_text() {
-  local __var=$1 title=$2 prompt=$3 def=${4:-} hint=${5:-} out rc
-  out=$(: | ui_fzf --print-query --query "$def" --prompt "$prompt > " --border-label " $title " \
-    --header "${hint:-enter: accept · esc: cancel}" --header-first)
-  rc=$?
-  [ "$rc" -le 1 ] || return 1
-  printf -v "$__var" '%s' "$(printf '%s\n' "$out" | sed -n 1p)"
+  local __var=$1 __title=$2 __prompt=$3 __def=${4:-} __hint=${5:-} __out __rc
+  __out=$(: | ui_fzf --print-query --query "$__def" --prompt "$__prompt > " --border-label " $__title " \
+    --header "${__hint:-enter: accept · esc: cancel}" --header-first)
+  __rc=$?
+  [ "$__rc" -le 1 ] || return 1
+  printf -v "$__var" '%s' "$(printf '%s\n' "$__out" | sed -n 1p)"
 }
 
-# ui_pick <var> <title> <header> <new label> <items file: value<TAB>label>: Enter takes the
-# highlighted row. With a new label, the last row is always "+ <label>: <what you typed>".
+# ui_pick <var> <title> <header> <new label> <items file: value<TAB>name[<TAB>detail]>: Enter takes
+# the highlighted row; typing searches the names only. With a new label, a last row is always
+# "+ <label>: <what you typed>".
 ui_pick() {
-  local __var=$1 title=$2 header=$3 newlbl=$4 file=$5 out rc sel q gen
-  gen="cat $(printf '%q' "$file")"
-  if [ -n "$newlbl" ]; then
-    gen="$gen; printf '__new__\t\033[2m+ %s:\033[0m %s\n' $(printf '%q' "$newlbl") {q}"
+  local __var=$1 __title=$2 __header=$3 __newlbl=$4 __file=$5 __out __rc __sel __q __gen
+  __gen="cat $(printf '%q' "$__file")"
+  if [ -n "$__newlbl" ]; then
+    __gen="$__gen; printf '__new__\t\033[2m+ %s:\033[0m %s\n' $(printf '%q' "$__newlbl") {q}"
   fi
-  out=$(: | ui_fzf --print-query --no-sort --delimiter='\t' --with-nth=2.. --accept-nth=1 \
-    --border-label " $title " --header "$header" --header-first --prompt '> ' \
-    --bind "start,change:reload-sync:$gen")
-  rc=$?
-  [ "$rc" -le 1 ] || return 1
-  q=$(printf '%s\n' "$out" | sed -n 1p)
-  sel=$(printf '%s\n' "$out" | sed -n 2p)
-  if [ "$sel" = __new__ ]; then
-    [ -n "$q" ] || ui_text q "$title" "$newlbl" "" "a name: letters, digits, - and _" || return 1
-    sel=$q
+  __out=$(: | ui_fzf --print-query --delimiter='\t' --with-nth=2.. --nth=1 --accept-nth=1 \
+    --border-label " $__title " --header "$__header" --header-first --prompt '> ' \
+    --bind "start,change:reload-sync:$__gen")
+  __rc=$?
+  [ "$__rc" -le 1 ] || return 1
+  __q=$(printf '%s\n' "$__out" | sed -n 1p)
+  __sel=$(printf '%s\n' "$__out" | sed -n 2p)
+  if [ "$__sel" = __new__ ]; then
+    [ -n "$__q" ] || ui_text __q "$__title" "$__newlbl" "" "a name: letters, digits, - and _" || return 1
+    __sel=$__q
   fi
-  [ -n "$sel" ] || return 1
-  printf -v "$__var" '%s' "$sel"
+  [ -n "$__sel" ] || return 1
+  printf -v "$__var" '%s' "$__sel"
 }
 
 # ui_menu <var> <title> <header> <items: value<TAB>label lines>
 ui_menu() {
-  local __var=$1 out
-  out=$(printf '%s\n' "$4" | ui_fzf --no-sort --delimiter='\t' --with-nth=2.. --accept-nth=1 \
+  local __var=$1 __out
+  __out=$(printf '%s\n' "$4" | ui_fzf --no-sort --delimiter='\t' --with-nth=2.. --accept-nth=1 \
     --border-label " $2 " --header "$3" --header-first --prompt '> ') || return 1
-  [ -n "$out" ] || return 1
-  printf -v "$__var" '%s' "$out"
+  [ -n "$__out" ] || return 1
+  printf -v "$__var" '%s' "$__out"
 }
 
 slugify() { # a task name from a prompt: a few meaningful words, lowercase, '-' between them
@@ -86,7 +88,7 @@ ui_new_agent() {
   gf="$f.groups"
   cur=$(current_repo 2>/dev/null)
   repo_list | awk -F'\t' -v c="$cur" -v dim="$(printf '\033[2m')" -v r="$(printf '\033[0m')" '
-    { line = $2 "\t" $1 "  " dim $2 r } $2 == c { top = line; next } { rest[++n] = line }
+    { line = $2 "\t" $1 "\t" dim $2 r } $2 == c { top = line; next } { rest[++n] = line }
     END { if (top != "") print top; for (i = 1; i <= n; i++) print rest[i] }' > "$f"
   if ! ui_pick repo "new agent · 1/4" "repository · type to filter" "" "$f"; then
     rm -f "$f" "$gf"; dash_msg "new agent cancelled"; return 0

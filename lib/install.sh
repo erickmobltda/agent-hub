@@ -36,8 +36,14 @@ settings_merge() {
       ]))'
 }
 
-tmux_block_strip() { # stdin -> stdout without our block (v1 or v2)
-  awk -v b="$MARK_BEGIN" -v e="$MARK_END" '$0 == b { skip = 1; next } $0 == e { skip = 0; next } !skip'
+tmux_block_strip() { # stdin -> stdout without our block (v1 or v2) and the blank line before it
+  awk -v b="$MARK_BEGIN" -v e="$MARK_END" '
+    $0 == b { skip = 1; blank = 0; next }
+    $0 == e { skip = 0; next }
+    skip { next }
+    /^[[:space:]]*$/ { if (blank) print ""; blank = 1; next }
+    { if (blank) print ""; blank = 0; print }
+    END { if (blank && !skip) print "" }'
 }
 
 # tmux_block_append <repo> : stdin -> stdout with our block at the very end, after tpm, so
