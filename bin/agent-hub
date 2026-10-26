@@ -1,0 +1,50 @@
+#!/bin/bash
+# agent-hub — Claude Code agent hub on tmux. Single entrypoint.
+set -u
+
+src=$0
+while [ -L "$src" ]; do
+  dir=$(cd -P "$(dirname "$src")" && pwd)
+  src=$(readlink "$src")
+  case "$src" in /*) ;; *) src="$dir/$src" ;; esac
+done
+AGENT_HUB_HOME=$(cd -P "$(dirname "$src")/.." && pwd)
+export AGENT_HUB_HOME
+
+for f in common doctor config agents dash hq; do
+  [ -f "$AGENT_HUB_HOME/lib/$f.sh" ] && . "$AGENT_HUB_HOME/lib/$f.sh"
+done
+
+usage() {
+  cat <<'EOF'
+usage: agent-hub <command> [args]
+  doctor                                   check dependencies
+  setup [--repos-roots P] [--branch-prefix B] [--worktree-location L]
+  config get <key> | set <key> <value> | show
+  new --group G --repo R --task T [--prompt P]
+  list [--format tsv|json]
+  close G/T [--yes] [--delete-branch] [--force-delete-branch]
+  move G/T --to G2
+  dash                                     fzf dashboard
+  hq                                       create/attach the hub session
+  status-bar                               status-right segment
+EOF
+}
+
+cmd=${1:-}
+[ $# -gt 0 ] && shift
+case "$cmd" in
+  doctor) cmd_doctor "$@" ;;
+  setup) cmd_setup "$@" ;;
+  config) cmd_config "$@" ;;
+  new) cmd_new "$@" ;;
+  list) cmd_list "$@" ;;
+  close) cmd_close "$@" ;;
+  move) cmd_move "$@" ;;
+  dash) cmd_dash "$@" ;;
+  hq) cmd_hq "$@" ;;
+  status-bar) cmd_status_bar "$@" ;;
+  hook) exec /bin/bash "$AGENT_HUB_HOME/hooks/status-hook.sh" "$@" ;;
+  -h|--help|help) usage ;;
+  *) usage >&2; exit "$EX_ERR" ;;
+esac
