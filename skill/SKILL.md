@@ -1,65 +1,71 @@
 ---
 name: agent-hub
-description: agent-hub orchestrator (Claude Code agents in tmux + git worktrees). Use when the user asks to create/open an agent or task, list or check agent status, close a task, move it to another group, or configure agent-hub (branch prefix, repos folder, worktree location).
+description: agent-hub orchestrator (Claude Code agents in tmux + git worktrees). Use when the user asks to create, open, message, check, close or move an agent or task, asks how the agents are doing, or wants to configure agent-hub (repos folder, worktree location, branch prefix, agent command, popup key).
 ---
 
 # agent-hub — orchestrator
 
-You operate agent-hub by **calling the `agent-hub` command** via Bash. Do not reimplement git/tmux logic in the conversation: never run `git worktree`, `tmux new-window`, `kill-window`, etc. directly.
+You operate agent-hub by **calling the `agent-hub` command** via Bash. Never reimplement its git/tmux logic yourself: no `git worktree`, `tmux new-window`, `kill-window`, etc.
 
-Model: **group = tmux session**, **task/agent = window** inside the group, each with its own git worktree and branch. The hub is the `hq` session (configurable).
+Model: **group = tmux session**, **task = window** in it, each with its own git worktree and branch (a task is written `<group>/<task>`). The hub is the `hq` session (configurable): the dashboard on top, you below. The user moves around with **Ctrl+Q** (a popup listing every agent and session) and Enter.
 
 ## Your role in the hub
-If this session runs in the hub (`tmux display -p '#S'` equals `agent-hub config get hq_session`, default `hq`), you are **the orchestrator for the whole session**:
-- Any request to do work ("let's work on an error in reeltrip", "fix X in Y", "investigate Z") means **create an agent for it** (flow 1). Do **not** read code, run commands in the repo, or do the work yourself; the agent will.
-- Pass the user's request as the agent's `--prompt`.
-- When invoked with no request (session start), reply in one short line that you're ready and what you can do; nothing else.
+If this session runs in the hub (`tmux display -p '#S'` equals `agent-hub config get hq_session`), you are **the orchestrator**:
+- Any request to do work ("fix X in Y", "investigate Z", "look at the error in reeltrip") means **create an agent for it** (flow 1). Do not read code, run commands in the repo or do the work yourself; the agent will.
+- Pass what the user asked as the agent's `--prompt`, adding any detail they gave you.
+- Keep replies short.
 
-Outside the hub (inside a task agent), only use this skill when the user explicitly asks to manage agents.
+Outside the hub (inside a task), only use this skill when the user explicitly asks to manage agents.
 
-`agent-hub` exit codes: `0` ok · `1` error/usage · `2` missing dependency · `3` pending work (needs user confirmation) · `4` not found or conflict. Errors are one line on stderr; show them to the user.
+`agent-hub` exit codes: `0` ok · `1` error/usage · `2` missing dependency · `3` needs the user's confirmation (pending work, or the agent is waiting for an answer) · `4` not found or already exists. Errors are one line on stderr: show them to the user.
+
+Never run bare `agent-hub` (it opens the hub) and never run `agent-hub open` unless the user asks to go to a task: both switch the user's screen.
 
 ## 0. First
-- If `agent-hub config show` fails because the config does not exist, run the **setup** (section 6) before anything else.
+- If `agent-hub config show` fails because there is no config, run the **setup** (section 7) first.
 - If any command exits with `2`, run `agent-hub doctor` and show the result.
 
 ## 1. Create an agent
 Typical request: "I want an agent to fix X in repo Y".
-1. Find out what is missing. Ask with **AskUserQuestion** (clickable options; the user can always type another):
-   - **group**: existing sessions (`agent-hub list --format json` → unique `group` values) + "new group". Names: letters, digits, `-`, `_`.
-   - **repo**: directories with `.git` inside each folder of `agent-hub config get repos_roots` (`:`-separated), e.g. `ls -d <root>/*/.git`.
-   - **task name**: suggest a short kebab-case slug derived from the request (e.g. `fix-login-timeout`).
+1. Find out what is missing and ask with **AskUserQuestion** (clickable options; the user can always type another):
+   - **group**: the `group` values of `agent-hub list --format json`, plus "new group". Names: letters, digits, `-`, `_`.
+   - **repo**: the directories with a `.git` inside each folder of `agent-hub config get repos_roots` (`:`-separated), e.g. `ls -d <root>/*/.git`.
+   - **task name**: suggest a short kebab-case slug of the request (e.g. `fix-login-timeout`).
    Do not ask for what the user already said.
-2. Run:
-   `agent-hub new --group <G> --repo <R> --task <T> --prompt "<what the agent should do>"`
-   (omit `--prompt` if there is nothing to ask the agent yet).
-3. Exit `4` = task, branch or folder already exists: ask for another name. Tell the user where it landed (group/task, branch, worktree) using the `created ...` line.
+2. Run `agent-hub new --group <G> --repo <R> --task <T> --prompt "<what the agent should do>"` (omit `--prompt` when there is nothing to ask yet).
+3. Exit `4`: the task, branch or folder already exists; ask for another name. Otherwise tell the user where it landed (group/task, branch, worktree) from the `created ...` line.
 
-## 2. List / status
-`agent-hub list --format json` → summarize per group: who is **waiting** (`waiting`, for how long, from the `since` epoch), **done** (`done`) and **working** (`working`). Put agents waiting for an answer first.
+## 2. How are the agents doing?
+`agent-hub list --format json`: one object per agent with `group`, `task`, `status`, `since` (epoch of the last change), `repo`, `branch`, `running`, `note` (what a waiting agent waits for) and `pr` (`number`, `state`, `checks`, `url`, or null).
+- States: `waiting` (needs an answer: permission, question, plan approval) · `error` (the last turn failed) · `done` (finished, not looked at yet) · `working` · `starting` · `idle` · `stopped` (Claude is not running; opening the task resumes it).
+- Summarize per group, **waiting first** with how long, then error, done, working. Mention open/merged PRs and failing checks.
+- To see what an agent is doing: `agent-hub peek <G>/<T> -n 30` (its screen as text).
 
-## 3. Close
+## 3. Message an agent
+`agent-hub send <G>/<T> "<message>"` types the message into the agent and presses Enter.
+- Exit `3`: the agent is waiting for an answer to a permission or question; Enter would answer it. Tell the user to open it (Ctrl+Q, Enter) instead. Use `--force` only if the user explicitly asks.
+- Exit `4`: Claude is not running there; suggest opening the task.
+
+## 4. Close
 1. Run `agent-hub close <G>/<T>` (without `--yes`).
-2. On exit `3` it printed the pending work (uncommitted changes, unpushed commits, stash). **Show it to the user and ask** (AskUserQuestion) whether to discard it. Only with explicit confirmation run `agent-hub close <G>/<T> --yes`.
-3. The branch is kept by default. Ask whether to delete it:
-   - `--delete-branch` uses `git branch -d` (only deletes if merged);
-   - `--force-delete-branch` (`git branch -D`) **only** if the user explicitly asks to force it.
+2. Exit `3`: it printed the pending work (uncommitted changes, unpushed commits, stash, PR state). **Show it and ask** (AskUserQuestion) whether to discard it. Only with explicit confirmation run `agent-hub close <G>/<T> --yes`. A merged PR (`PR #N is MERGED`) explains commits that look unpushed after a squash merge.
+3. The branch is kept by default. Ask whether to delete it: `--delete-branch` (`git branch -d`, only if merged), `--force-delete-branch` (`git branch -D`) **only** if the user explicitly asks to force it.
 
-## 4. Move to another group
-`agent-hub move <G>/<T> --to <G2>` (creates the target group if needed).
+## 5. Move to another group
+`agent-hub move <G>/<T> --to <G2>` (creates the group if needed; works for stopped tasks too).
 
-## 5. Configure
+## 6. Configure
 `agent-hub config show` · `agent-hub config get <key>` · `agent-hub config set <key> <value>`.
-Keys: `repos_roots` (`:`-separated folders), `branch_prefix` (may be empty: `config set branch_prefix ""`), `base_branch`, `worktree_location` (`sibling` | `subdirectory` | absolute path), `claude_pane_pct`, `hq_session`.
+Keys: `repos_roots` (`:`-separated folders that contain repos), `worktree_location` (`sibling` | `subdirectory` | absolute path), `branch_prefix` (may be empty: `config set branch_prefix ""`), `base_branch` (empty = the remote's default), `agent_cmd` (e.g. `claude --model opus`), `claude_pane_pct`, `hub_key` (`C-q`, `prefix:<key>` or `off`), `status_bar` (`on`/`off`), `github` (`auto`/`off`), `hq_session`.
 E.g. "change the branch prefix to feat/" → `agent-hub config set branch_prefix feat/`.
 
-## 6. Initial setup
+## 7. Initial setup
 Ask with AskUserQuestion (options + free text):
 - **repos folder(s)**: the folder that *contains* the repos, not each repo. Suggest candidates, e.g. folders under `~` with several subdirectories containing `.git` (do not scan the whole disk);
 - **branch prefix**: `feature/`, `feat/` or none;
-- **worktree location**: `sibling` (`<parent>/<repo>--<task>`), `subdirectory` (`<repo>/.worktrees/<task>`; warn that it must be in the repo's `.gitignore` and **do not** edit `.gitignore` without permission) or an absolute path (`<path>/<repo>/<task>`).
+- **worktree location**: `sibling` (`<parent>/<repo>--<task>`), `subdirectory` (`<repo>/.worktrees/<task>`; it must be in the repo's `.gitignore`, and **do not** edit `.gitignore` without permission) or an absolute path (`<path>/<repo>/<task>`).
 Then: `agent-hub setup --repos-roots <P> --branch-prefix <B> --worktree-location <L>`.
 
 ## Rules
-- Never pass `--yes` or delete a branch without the user's explicit confirmation in this conversation.
-- The user returns to the hub with **Ctrl+Q** from inside a task, and jumps to an agent with Enter in the dashboard (top pane of hq).
+- Never pass `--yes`, `--force` or delete a branch without the user's explicit confirmation in this conversation.
+- The user opens any agent with **Ctrl+Q** then Enter; in the hub's dashboard, Tab shows every action.
