@@ -21,7 +21,7 @@ Plan: ~/.claude/plans/quero-que-vc-revise-tidy-lobster.md · branch `feat/hub-v2
 - [x] 13. doctor v2
 - [x] 14. Docs: README, SKILL.md, SPEC.md
 - [x] 15a. Full test run: 292 checks, ALL PASSED
-- [ ] 15b. Merge to main (fast-forward)
+- [x] 15b. Merge to main (fast-forward)
 - [ ] 15c. User runs `./install.sh` (settings.json + tmux.conf diffs), then the manual end-to-end check
 
 ## v1 (done)
