@@ -17,9 +17,9 @@ fi
 conf=$(tmux_conf)
 if [ -f "$conf" ]; then
   tmux_block_strip < "$conf" > "$work/tmux.conf"
-  apply_with_diff "$conf" "$work/tmux.conf" "tmux.conf" &&
-    echo "the C-q binding stays active in the running server until restart (or: tmux unbind -n C-q)"
+  apply_with_diff "$conf" "$work/tmux.conf" "tmux.conf"
 fi
+"$REPO/bin/agent-hub" tmux-uninit && echo "tmux: popup key and status segment removed from the running server"
 
 unlink_ours "$(bin_dir)/agent-hub" "$REPO/bin/agent-hub"
 unlink_ours "$(skills_dir)/agent-hub" "$REPO/skill"
