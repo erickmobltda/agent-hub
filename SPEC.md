@@ -327,3 +327,32 @@ Mudanças técnicas:
 - **`close`:** faz o trabalho de git antes e mata a window por último; quem estava olhando a task vai para o hub em vez de ser desconectado. **`new`** descobre o branch base (`origin/HEAD`), funciona offline e sem remote, e cria o branch sem tracking.
 - **Novos comandos:** `open`, `send` (recusa quando o agente espera resposta), `peek`, `heal`, `config edit`, e `new` interativo num terminal.
 - **Não usar `@resurrect-processes` para o claude:** o agent-hub já retoma com `claude --continue`.
+
+## 18. v2.1: hub no estilo agent-deck (decisões de 2026-10-26)
+
+Motivo: depois de usar a v2, o usuário achou a UX do dashboard inferior à do agent-deck e pediu o mesmo modelo: tela dividida, sessões e grupos à esquerda, preview à direita, um "+ new session" e formas de renomear e apagar.
+
+Decisões (perguntadas ao usuário e aprovadas):
+1. **Sem orquestrador.** O hub é só o dashboard, em tela cheia. Substitui o §10 e a parte do orquestrador do §17.
+2. **Letras em tudo** (hub e popup Ctrl+Q), sem linha de input: `/` abre a busca e Esc volta à árvore. Substitui a decisão 2 do §17 (digitar filtra, menu no Tab, Ctrl+letra).
+3. **Nova sessão em 3 passos, sem prompt:** categoria (existente ou nova) → repo (filtra ao digitar) → nome (ticket do Jira ou texto livre, transformado num nome válido mantendo maiúsculas: `PROJ-1234 fix login` → `PROJ-1234-fix-login`). Ao criar, a task abre e o usuário fala direto com o Claude.
+
+Mudanças técnicas:
+- **Layout:** `--no-input`, lista com borda superior `SESSIONS`, preview à direita (62%; embaixo quando o pane tem menos de 100 colunas). O título `PREVIEW` é a primeira linha do próprio preview, porque uma borda só à esquerda não tem linha para um label do fzf.
+- **Cabeçalho e rodapé:** o cabeçalho tem os agentes por estado (arquivo `.summary` escrito pelo `rows.awk`) e a mensagem da última ação. O rodapé mostra as teclas da linha selecionada; ele troca no evento `focus`, sem iniciar o agent-hub.
+- **Busca:** `/` faz `show-input` e `unbind` das letras, e digitar troca para a lista plana. Esc faz `clear-query+rebind(...)`, e o `hide-input` vem depois, num `bg-transform`: o fzf desfaz uma mudança da query feita na mesma cadeia de ações de um `hide-input`.
+- **Diálogos:**
+  - no hub, as perguntas abrem num `display-popup -B` (sem borda: o fzf desenha a moldura e o título), com o tamanho limitado ao do cliente;
+  - no popup Ctrl+Q, rodam dentro dele via `execute`, porque o tmux não empilha popups;
+  - uma linha sem pergunta possível (`d` numa categoria com tasks, por exemplo) só deixa a mensagem, sem abrir popup.
+- **Renomear** (`agent-hub rename G NOVO | G/T NOVO`, e `r`):
+  - categoria: `rename-session`, mais o `group=` dos marcadores e o arquivo de categorias recolhidas;
+  - task: `rename-window` e o `task=` do marcador;
+  - o branch e a pasta não mudam, porque o Claude pode estar rodando ali.
+- **Apagar:**
+  - `d` numa task é o `close` de sempre;
+  - numa sessão comum, pede confirmação e faz `kill-session` (antes, os clientes vão para o hub);
+  - uma categoria com tasks não é apagada: ela some com a última task.
+- **Lista de repos:** só entram diretórios com uma pasta `.git`. Os worktrees das tasks, cujo `.git` é um arquivo, não aparecem mais como repos.
+- **`agent-hub new` num terminal** imprime as mensagens (cancelado, criado, erro), em vez de gravá-las para um dashboard que não existe.
+- **Hub antigo com orquestrador:** o pane do orquestrador é mantido, porque pode ter uma conversa em uso. `tmux kill-session -t hq && agent-hub` recria o hub só com o dashboard.

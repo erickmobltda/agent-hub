@@ -19,19 +19,20 @@ usage() {
   cat <<'EOF'
 usage: agent-hub [command]
   (no command)                       open the hub (creates or repairs it); same as: agent-hub hq
-  new                                new agent, step by step (in a terminal)
+  new                                new session, step by step: category, repo, name
   new --group G --repo R --task T [--prompt P] [--open]
   open G/T [--zoom] [--no-switch]    go to a task; starts Claude again if it stopped
   send G/T <message> [--force]       type a message into the agent and press Enter
   peek G/T [-n lines]                print the agent's screen
   list [--format tsv|json]           tasks and agents with their state
   close G/T [--yes] [--delete-branch] [--force-delete-branch]
-  move G/T --to G2
+  move G/T --to G2                   move a task to another category
+  rename G NEW | rename G/T NEW      rename a category, or a task (its branch keeps its name)
   dash [--popup|--hq]                the dashboard (Ctrl+Q opens it as a popup)
   config show | get K | set K V | edit
   setup [--repos-roots P] [--branch-prefix B] [--worktree-location L]
   doctor [--deps]
-internal: run, heal, tmux-init, tmux-uninit, status-bar, hook, _gh-refresh
+internal: run, heal, tmux-init, tmux-uninit, status-bar, hook, _gh-refresh, _name-preview
 EOF
 }
 
@@ -46,6 +47,7 @@ case "$cmd" in
   list) cmd_list "$@" ;;
   close) cmd_close "$@" ;;
   move) cmd_move "$@" ;;
+  rename) cmd_rename "$@" ;;
   dash) cmd_dash "$@" ;;
   config) cmd_config "$@" ;;
   setup) cmd_setup "$@" ;;
@@ -57,6 +59,7 @@ case "$cmd" in
   status-bar) cmd_status_bar ;;
   hook) exec /bin/bash "$AGENT_HUB_HOME/hooks/status-hook.sh" "$@" ;;
   _gh-refresh) cmd_gh_refresh "$@" ;;
+  _name-preview) config_load; name_preview "${1:-}" "${2:-}" "${3:-}" ;;
   -h|--help|help) usage ;;
   *) usage >&2; exit "$EX_ERR" ;;
 esac

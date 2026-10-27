@@ -33,6 +33,7 @@ repo_list() { # name<TAB>path of every repo under repos_roots, most recently use
   while IFS= read -r root; do
     [ -d "$root" ] || continue
     ls -td "$root"/*/.git 2>/dev/null | while IFS= read -r d; do
+      [ -d "$d" ] || continue # a worktree's .git is a file: tasks are not repos
       d=${d%/.git}
       printf '%s\t%s\n' "${d##*/}" "$d"
     done
@@ -148,7 +149,7 @@ rows() { # rows <raw|hq|popup> [tree|flat] [file for the other view]
     t list-panes -a -F "P$TAB#{session_name}$TAB#{window_name}$TAB#{window_id}$TAB#{pane_id}$TAB#{pane_index}$TAB#{@agent_hub_role}$TAB#{@agent_status}$TAB#{@agent_since}$TAB#{@agent_note}$TAB#{@agent_worktree}$TAB#{pane_current_path}$TAB#{pane_current_command}$TAB#{?#{==:#{pane_title},#{host}},,#{pane_title}}$TAB#{pane_dead}" 2>/dev/null
     t list-sessions -F "S$TAB#{session_name}$TAB#{session_windows}$TAB#{pane_current_path}$TAB#{pane_id}" 2>/dev/null
   } | AH_MODE=$mode AH_HQ=$cfg_hq_session AH_GH=$gh AH_GHDIR=$ghdir AH_STALE=$stale AH_VIEW=$view AH_ALSO=$also \
-      AH_COLLAPSED="$(runtime_dir)/collapsed" awk -f "$AGENT_HUB_HOME/lib/rows.awk"
+      AH_COLLAPSED="$(runtime_dir)/collapsed" AH_SUMMARY=${AH_SUMMARY:-} awk -f "$AGENT_HUB_HOME/lib/rows.awk"
   if [ -n "$stale" ]; then
     [ -s "$stale" ] && gh_refresh_bg < "$stale"
     rm -f "$stale"
@@ -561,4 +562,77 @@ cmd_list() {
              note: .[15]})' ;;
     *) die "$EX_ERR" "list: format must be tsv or json" ;;
   esac
+}
+
+group_has_tasks() { # group_has_tasks <group>: a task marker or a Claude pane of agent-hub in it
+  local f
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    marker_read "$f"
+    [ "$mk_group" = "$1" ] && return 0
+  done <<EOM
+$(marker_files)
+EOM
+  t list-panes -s -t "=$1" -F '#{@agent_hub_role}' 2>/dev/null | grep -qx claude
+}
+
+# rename <group> <new> | <group>/<task> <new>. Names only: a task keeps its branch and worktree
+# path (Claude may be running there), and its marker and tmux window take the new name.
+cmd_rename() {
+  local target=${1:-} new=${2:-} f
+  [ $# -eq 2 ] && [ -n "$target" ] && [ -n "$new" ] ||
+    die "$EX_ERR" "usage: rename <group> <new name> | rename <group>/<task> <new name>"
+  valid_name "$new" || die "$EX_ERR" "invalid name (use letters, digits, - and _): $new"
+  config_load || true
+  case "$target" in
+    */*)
+      task_resolve "$target"
+      [ "$new" != "$tk_task" ] || die "$EX_ERR" "it is already called $new"
+      if t list-windows -t "=$tk_group" -F '#{window_name}' 2>/dev/null | grep -qxF "$new" ||
+         marker_find "$tk_group" "$new" >/dev/null; then
+        die "$EX_NOTFOUND" "task '$new' already exists in group '$tk_group'"
+      fi
+      [ -n "$tk_wid" ] && t rename-window -t "$tk_wid" "$new"
+      [ -n "$tk_marker" ] && marker_write "$(dirname "$tk_marker")" "$tk_group" "$new" "$tk_wt"
+      echo "renamed $target to $tk_group/$new (branch and folder unchanged)" ;;
+    *)
+      [ "$target" != "$cfg_hq_session" ] || die "$EX_ERR" "the hub session is not a group"
+      [ "$new" != "$cfg_hq_session" ] || die "$EX_ERR" "$new is the hub's name"
+      t has-session -t "=$target" 2>/dev/null || group_has_tasks "$target" ||
+        die "$EX_NOTFOUND" "group not found: $target"
+      if t has-session -t "=$new" 2>/dev/null || group_has_tasks "$new"; then
+        die "$EX_NOTFOUND" "group '$new' already exists"
+      fi
+      t has-session -t "=$target" 2>/dev/null && t rename-session -t "=$target" "$new"
+      while IFS= read -r f; do
+        [ -n "$f" ] || continue
+        marker_read "$f"
+        [ "$mk_group" = "$target" ] && marker_write "$(dirname "$f")" "$new" "$mk_task" "$mk_worktree"
+      done <<EOM
+$(marker_files)
+EOM
+      f="$(runtime_dir)/collapsed"
+      if grep -qxF -- "$target" "$f" 2>/dev/null; then
+        { grep -vxF -- "$target" "$f"; echo "$new"; } > "$f.$$"; mv "$f.$$" "$f"
+      fi
+      echo "renamed group $target to $new" ;;
+  esac
+  dash_poke
+}
+
+# session_delete <session>: kills a tmux session without agent-hub tasks (an emptied category ends
+# up as one). Clients looking at it move to the hub instead of being detached.
+session_delete() {
+  local s=$1 c
+  t has-session -t "=$s" 2>/dev/null || die "$EX_NOTFOUND" "session not found: $s"
+  [ "$s" != "$cfg_hq_session" ] || die "$EX_ERR" "that is the hub"
+  group_has_tasks "$s" && die "$EX_PENDING" "$s has agent-hub tasks: close them first"
+  c=$(t list-clients -F "#{client_name}$TAB#{session_name}" 2>/dev/null | awk -F'\t' -v s="$s" '$2 == s { print $1 }')
+  if [ -n "$c" ]; then
+    ensure_hq >/dev/null 2>&1
+    printf '%s\n' "$c" | while IFS= read -r c; do t switch-client -c "$c" -t "=$cfg_hq_session:" 2>/dev/null; done
+  fi
+  t kill-session -t "=$s" || die "$EX_ERR" "could not kill session $s"
+  dash_poke
+  echo "deleted session $s"
 }

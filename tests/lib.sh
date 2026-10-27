@@ -114,6 +114,14 @@ start_client() {
 
 client_session() { tm display -p -c "$1" '#{client_session}'; }
 client_pane() { tm display -p -c "$1" '#{pane_id}'; }
+# client_screen <client>: what the client shows, popups included (the harness pane it runs in).
+client_screen() {
+  local pid
+  pid=$(tm display -p -c "$1" '#{client_pid}')
+  tm capture-pane -p -t "$(tm list-panes -a -F '#{pane_pid} #{pane_id}' | awk -v p="$pid" '$1 == p { print $2; exit }')"
+}
+client_has() { client_screen "$1" | grep -qF -- "$2"; } # client_has <client> <text>
+client_keys() { local c=$1; shift; tm send-keys -K -c "$c" "$@"; } # typed by the user of <client>
 
 # wait_for <seconds> <command...>: polls until the command succeeds.
 wait_for() {

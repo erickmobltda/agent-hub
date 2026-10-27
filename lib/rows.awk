@@ -7,11 +7,12 @@
 # ENVIRON: AH_MODE (raw | hq | popup), AH_HQ (hub session), AH_GH (1: read the PR cache),
 #   AH_GHDIR (cache dir), AH_STALE (file that receives repos whose cache is old), AH_TTL (seconds),
 #   AH_VIEW (tree | flat: what goes to stdout), AH_ALSO (file that receives the other view),
-#   AH_COLLAPSED (file listing collapsed groups; their tasks are left out of the tree).
+#   AH_COLLAPSED (file listing collapsed groups; their tasks are left out of the tree),
+#   AH_SUMMARY (file that receives the header line: agents per state).
 # Output, hq/popup (fzf shows field 4):
 #   kind id target display status since note repo branch worktree pr_num pr_state pr_checks pr_url title repo_path group
 #   kinds: g group header (tree only) · t task (live or stopped) · p Claude started by hand ·
-#          s plain session · h hub (popup only). The "sessions" group is called *sessions.
+#          s plain session · n the "+ new session" row (last). The "sessions" group is *sessions.
 #   tree: headers with the group's tasks under them (├─ └─); flat: one line per item, group/task
 #   (the dashboard shows the flat view while a query is typed: fzf only searches what is shown).
 # Output, raw:
@@ -126,13 +127,10 @@ function add(kind, id, target, group, name, st, since, note, repo, br, wt, pane,
   return n
 }
 
-function build(   i, n, sc, best, k, st, used, usedsess, hub) {
+function build(   i, n, sc, best, k, st, used, usedsess) {
   # Live panes of each task: the pane that carries its worktree, else the window named after it.
   for (i = 1; i <= np; i++) {
-    if (ps[i] == hq) {
-      if (prole[i] == "orchestrator") hub = i
-      continue
-    }
+    if (ps[i] == hq) continue
     n = 0
     if (pwt[i] != "" && (pwt[i] in WT)) n = WT[pwt[i]]
     else if ((ps[i] "/" pw[i]) in T) n = T[ps[i] "/" pw[i]]
@@ -162,14 +160,9 @@ function build(   i, n, sc, best, k, st, used, usedsess, hub) {
     if (sn[i] == hq || (sn[i] in usedsess)) continue
     add("s", "s:" sn[i], sn[i], "*sessions", sn[i], "", "", "", "", "", spath[i], spane[i], "", "", swin[i])
   }
-  if (mode == "popup") {
-    if (hub) add("h", "h:", pid[hub], "", "hub", (pst[hub] == "" ? "stopped" : pst[hub]), psince[hub], pnote[hub], "", "", "", pid[hub], pwid[hub], ptitle[hub], "")
-    else add("h", "h:", "-", "", "hub", "stopped", "", "", "", "", "", "", "", "", "")
-  }
 }
 
 function sortkey(n,   g, s) {
-  if (rk[n] == "h") return "0"
   if (rk[n] == "s") return "9 " rname[n]
   g = rgrp[n]; s = (rsince[n] == "") ? 9999999999 : rsince[n] + 0
   return sprintf("1 %d %s %d %010d %s", grank[g], g, rank[rst[n]], s, rname[n])
@@ -230,9 +223,6 @@ function display(n,   st, nm, g, task, w) {
     w = rextra[n] (rextra[n] == "1" ? " window" : " windows")
     return BLUE "▪" R " " GRAY pad("session", 8) R " " BOLD pad(rname[n], wname) R "  " GRAY pad(w, wrepo) R "  " GRAY tilde(rwt[n]) R
   }
-  if (rk[n] == "h") {
-    return GROUP "⌂" R " " BOLD pad("hub", 8 + 1 + wname) R "  " GRAY "orchestrator" R " · " tail(n)
-  }
   nm = rname[n]; g = nm; sub(/\/.*/, "", g); task = substr(nm, length(g) + 2)
   return col[st] icon[st] R " " col[st] pad(st, 8) R " " GRAY g "/" R (st == "stopped" ? "" : BOLD) task R spaces(wname - vlen(nm)) \
     "  " BLUE pad(base(rrepo[n]), wrepo) R "  " prcolor(n) spaces(wpr - vlen(prplain(n))) "  " GRAY ago(n) R
@@ -276,7 +266,7 @@ function emit(view, file,   i, n, g, cur, last) {
   cur = "\001"
   for (i = 1; i <= nr; i++) {
     n = idx[i]
-    if (view != "tree" || rk[n] == "h") { put(line(n, display(n)), file); continue }
+    if (view != "tree") { put(line(n, display(n)), file); continue }
     g = rgrp[n]
     if (g != cur) {
       cur = g
@@ -286,6 +276,17 @@ function emit(view, file,   i, n, g, cur, last) {
     last = (i == nr || rgrp[idx[i + 1]] != g)
     put(line(n, display_tree(n, last)), file)
   }
+  put("n\tn:\t-\t" GROUP "+" R " " BOLD "new session" R "  " GRAY "category → repo → name" R "\t\t\t\t\t\t\t\t\t\t\t\t\t", file)
+}
+
+function summary(   k, s, out, total) { # the header: "agent-hub  ◐ 1 waiting  ● 2 working ..."
+  out = GROUP "agent-hub" R
+  for (k = 1; k <= 7; k++) {
+    s = order[k]
+    if (allst[s] > 0) { out = out "   " col[s] icon[s] " " allst[s] " " s R; total += allst[s] }
+  }
+  if (!total) out = out "   " GRAY "no agents yet · n: new session" R
+  return out
 }
 
 function out(   i, j, n, k, tmp, task, view, also) {
@@ -307,13 +308,14 @@ function out(   i, j, n, k, tmp, task, view, also) {
     for (i = 1; i <= nr; i++) {
       if (vlen(rname[i]) > wname) wname = vlen(rname[i])
       task = (rk[i] == "s") ? rname[i] : substr(rname[i], index(rname[i], "/") + 1)
-      if (rk[i] != "h" && vlen(task) > wtask) wtask = vlen(task)
+      if (vlen(task) > wtask) wtask = vlen(task)
       if (rk[i] == "t" || rk[i] == "p") {
         if (vlen(base(rrepo[i])) > wrepo) wrepo = vlen(base(rrepo[i]))
         if (vlen(prplain(i)) > wpr) wpr = vlen(prplain(i))
-        gcount[rgrp[i]]++; gst[rgrp[i], rst[i]]++
+        gcount[rgrp[i]]++; gst[rgrp[i], rst[i]]++; allst[rst[i]]++
       } else if (rk[i] == "s") gcount["*sessions"]++
     }
+    if (ENVIRON["AH_SUMMARY"] != "") { print summary() > ENVIRON["AH_SUMMARY"]; close(ENVIRON["AH_SUMMARY"]) }
     view = (ENVIRON["AH_VIEW"] == "flat") ? "flat" : "tree"
     emit(view, "")
     also = ENVIRON["AH_ALSO"]

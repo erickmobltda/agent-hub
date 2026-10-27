@@ -2,7 +2,7 @@
 . "$(dirname "$0")/lib.sh"
 start_tmux
 make_repo "$TMP/repos" svc-a >/dev/null 2>&1
-write_config "repos_roots=$TMP/repos" "worktree_location=sibling" "github=off"
+write_config "repos_roots=$TMP/repos" "branch_prefix=feat/" "worktree_location=sibling" "github=off"
 "$AH" new --group dev --repo svc-a --task api >/dev/null 2>&1
 p_api=$(task_pane dev:api)
 "$AH" tmux-init
@@ -11,47 +11,75 @@ assert_contains "$(tm list-keys -T root C-q)" "display-popup" "popup: C-q bound 
 client=$(start_client scratch)
 check "popup: client attached" [ -n "$client" ]
 popup_open() { [ -n "$(dash_sock popup)" ]; }
+popup_closed() { [ -z "$(dash_sock popup)" ]; }
+current_has() { fzf_current "$sock" | grep -qF -- "$1"; }
 
-# Ctrl+Q opens the popup; typing filters; Enter jumps to the agent and closes it.
-tm send-keys -K -c "$client" C-q
+# Ctrl+Q opens the popup: the same tree as the hub, no hub row. / searches, Enter jumps to the
+# agent and closes it.
+client_keys "$client" C-q
 wait_for 5 popup_open
 sock=$(dash_sock popup)
 check "popup: Ctrl+Q opens the dashboard" [ -S "$sock" ]
 wait_for 3 sh -c "curl -s -m 1 --unix-socket '$sock' http://localhost | jq -e '.totalCount >= 2' >/dev/null"
-assert_contains "$(fzf_lines "$sock" | head -1 | cut -f4 | sed 's/  */ /g')" "⌂ hub orchestrator · stopped" "popup: the hub is the first row"
-fzf_post "$sock" 'change-query(api)'
-wait_for 2 sh -c "curl -s -m 1 --unix-socket '$sock' http://localhost | jq -r .current.text | grep -q dev/api"
-fzf_post "$sock" 'trigger(enter)'
-wait_for 3 sh -c "! ls '$sock' >/dev/null 2>&1"
-check "popup: closes after Enter" [ ! -e "$sock" ]
+assert_eq "g:dev" "$(fzf_lines "$sock" | head -1 | cut -f2)" "popup: the tree starts with the first group (no hub row)"
+client_keys "$client" /; client_keys "$client" -l api
+wait_for 2 current_has dev/api
+client_keys "$client" Enter
+wait_for 3 popup_closed
+check "popup: closes after Enter" popup_closed
 assert_eq "$p_api" "$(client_pane "$client")" "popup: Enter switched the client to the agent"
 
-# Ctrl+Q again closes it (fzf's own Ctrl+Q aborts).
-tm send-keys -K -c "$client" C-q
+# Esc closes the search first, then the popup; q and Ctrl+Q close it too.
+client_keys "$client" C-q
 wait_for 5 popup_open
 sock=$(dash_sock popup)
-tm send-keys -K -c "$client" C-q
-wait_for 3 sh -c "! ls '$sock' >/dev/null 2>&1"
-check "popup: Ctrl+Q again closes it" [ ! -e "$sock" ]
+client_keys "$client" /; client_keys "$client" -l api
+wait_for 2 sh -c "[ \"\$(curl -s -m 1 --unix-socket '$sock' http://localhost | jq -r .query)\" = api ]"
+client_keys "$client" Escape
+wait_for 3 sh -c "[ -z \"\$(curl -s -m 1 --unix-socket '$sock' http://localhost | jq -r .query)\" ]"
+check "popup: esc first closes the search" sh -c "[ -S '$sock' ] && [ -z \"\$(curl -s -m 1 --unix-socket '$sock' http://localhost | jq -r .query)\" ]"
+client_keys "$client" Escape
+wait_for 3 popup_closed
+check "popup: esc again closes it" popup_closed
+client_keys "$client" C-q
+wait_for 5 popup_open
+client_keys "$client" q
+wait_for 3 popup_closed
+check "popup: q closes it" popup_closed
+client_keys "$client" C-q
+wait_for 5 popup_open
+client_keys "$client" C-q
+wait_for 3 popup_closed
+check "popup: Ctrl+Q again closes it" popup_closed
 assert_eq "$p_api" "$(client_pane "$client")" "popup: closing it changes nothing"
 
-# The hub row creates the hub when it doesn't exist yet and goes there.
-check "popup: no hub yet" sh -c "! tmux -L $AGENT_HUB_TMUX_SOCKET has-session -t =hq 2>/dev/null"
-tm send-keys -K -c "$client" C-q
+# n inside the popup: the questions run in the popup itself (tmux can't stack popups); the new
+# task opens and the popup closes.
+client_keys "$client" C-q
 wait_for 5 popup_open
-sock=$(dash_sock popup)
-wait_for 3 sh -c "curl -s -m 1 --unix-socket '$sock' http://localhost | jq -e '.totalCount >= 2' >/dev/null"
-fzf_post "$sock" 'first+trigger(enter)'
-wait_for 5 sh -c "[ \"\$(tmux -L $AGENT_HUB_TMUX_SOCKET display -p -c '$client' '#{client_session}')\" = hq ]"
-assert_eq "hq" "$(client_session "$client")" "popup: the hub row opens the hub, created on the spot"
-assert_eq "dashboard orchestrator" "$(tm list-panes -s -t =hq -F '#{@agent_hub_role}' | sort | tr '\n' ' ' | sed 's/ $//')" "popup: hub has its two panes"
+client_keys "$client" n
+wait_for 5 client_has "$client" "new session · 1/3 category"
+check "popup: n asks for the category" client_has "$client" "new session · 1/3 category"
+client_keys "$client" -l "qa"
+wait_for 3 client_has "$client" "+ new category: qa"
+client_keys "$client" Enter
+wait_for 3 client_has "$client" "new session · 2/3 repository"
+client_keys "$client" Enter
+wait_for 3 client_has "$client" "new session · 3/3 name"
+client_keys "$client" -l "T-1 check"
+wait_for 3 client_has "$client" "qa/T-1-check"
+client_keys "$client" Enter
+wait_for 8 sh -c "[ \"\$(tmux -L $AGENT_HUB_TMUX_SOCKET display -p -c '$client' '#{client_session}:#{window_name}')\" = qa:T-1-check ]"
+assert_eq "qa:T-1-check" "$(tm display -p -c "$client" '#{client_session}:#{window_name}')" "popup: n creates the task and opens it"
+wait_for 3 popup_closed
+check "popup: and closes" popup_closed
 
 # The popup starts in the directory of the pane it was opened from (the wizard preselects that repo).
 tm switch-client -c "$client" -t "$p_api"
-tm send-keys -K -c "$client" C-q
+client_keys "$client" C-q
 wait_for 5 popup_open
 pid=$(basename "$(dash_sock popup)" .sock); pid=${pid##*-}
 assert_eq "$TMP/repos/svc-a--api" "$(lsof -a -p "$pid" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p')" "popup: runs in the current pane's directory"
-tm send-keys -K -c "$client" Escape
+client_keys "$client" Escape
 
 finish

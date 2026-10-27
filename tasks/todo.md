@@ -29,3 +29,14 @@ Plan: ~/.claude/plans/quero-que-vc-revise-tidy-lobster.md · branch `feat/hub-v2
 - [x] doctor, config/setup, status hook, new/list/close/move, dash + status-bar, hq + skill, install/uninstall, tests, docs
 - [x] Setup UX: fzf picker (arrows + Enter + free-text option), "folder that contains repos", ~ expansion
 - [x] All user-facing text in English
+
+## v2.1: agent-deck-style hub (plan: same file, approved 2026-10-26)
+
+- [x] rows.awk: no hub row, `+ new session` row, header summary
+- [x] agents.sh: `rename` (group/task), delete a plain session; repo list without task worktrees
+- [x] ui.sh: wizard category → repo → name (namify + live preview), rename/delete flows
+- [x] dash.sh: split layout + labels, letter keys, `/` search + Esc, context footer, header summary, q, help; borderless dialogs sized to the client
+- [x] hq.sh/run.sh: hub without orchestrator
+- [x] tests (dash, popup, hq, wizard, agents, gh): 363 checks pass + docs (README, SKILL, SPEC §18)
+- [x] merge to main (local fast-forward)
+- [ ] user rebuilds the hub (`tmux kill-session -t hq && agent-hub`)

@@ -146,6 +146,36 @@ check "move: a stopped task moves too" grep -qx 'group=dev' "$(git -C "$TMP/repo
 out=$("$AH" move nope/x --to ops 2>&1); rc=$?
 assert_eq 4 "$rc" "move: missing task -> exit 4"
 
+# --- rename: names only; a task keeps its branch and folder ---
+mk_infra="$(git -C "$TMP/repos/svc-b--infra" rev-parse --absolute-git-dir)/agent-hub"
+out=$("$AH" rename ops/infra infra2 2>&1); rc=$?
+assert_eq 0 "$rc" "rename task: exit 0"
+assert_eq "infra2" "$(tm list-windows -t =ops -F '#{window_name}')" "rename task: window renamed"
+check "rename task: marker updated" grep -qx 'task=infra2' "$mk_infra"
+assert_eq "feat/infra" "$(git -C "$TMP/repos/svc-b--infra" branch --show-current)" "rename task: the branch keeps its name"
+assert_eq "t ops infra2" "$("$AH" list | awk -F'\t' '$3 == "infra2" { print $1, $2, $3 }')" "rename task: listed under the new name"
+"$AH" rename dev/docs docs2 >/dev/null 2>&1
+check "rename task: a stopped one too" grep -qx 'task=docs2' "$(git -C "$TMP/repos/svc-b--docs" rev-parse --absolute-git-dir)/agent-hub"
+out=$("$AH" rename dev/docs2 api 2>&1); rc=$?
+assert_eq 4 "$rc" "rename task: a name in use -> exit 4"
+echo ops > "$AGENT_HUB_RUNTIME/collapsed"
+out=$("$AH" rename ops platform 2>&1); rc=$?
+assert_eq 0 "$rc" "rename group: exit 0"
+check "rename group: tmux session renamed" sh -c "tmux -L $AGENT_HUB_TMUX_SOCKET has-session -t =platform && ! tmux -L $AGENT_HUB_TMUX_SOCKET has-session -t =ops 2>/dev/null"
+check "rename group: markers updated" grep -qx 'group=platform' "$mk_infra"
+assert_eq "platform" "$(cat "$AGENT_HUB_RUNTIME/collapsed")" "rename group: still collapsed"
+out=$("$AH" rename platform dev 2>&1); rc=$?
+assert_eq 4 "$rc" "rename group: an existing group -> exit 4"
+out=$("$AH" rename platform 'a b' 2>&1); rc=$?
+assert_eq 1 "$rc" "rename: invalid name -> exit 1"
+out=$("$AH" rename platform hq 2>&1); rc=$?
+assert_eq 1 "$rc" "rename: the hub's name -> exit 1"
+out=$("$AH" rename nope x 2>&1); rc=$?
+assert_eq 4 "$rc" "rename: unknown group -> exit 4"
+"$AH" rename platform ops >/dev/null 2>&1; "$AH" rename ops/infra2 infra >/dev/null 2>&1; "$AH" rename dev/docs2 docs >/dev/null 2>&1
+rm -f "$AGENT_HUB_RUNTIME/collapsed"
+assert_eq "t ops infra" "$("$AH" list | awk -F'\t' '$3 == "infra" { print $1, $2, $3 }')" "rename: and back"
+
 # --- close ---
 echo dirty > "$wt/new.txt"
 out=$("$AH" close dev/api 2>&1); rc=$?

@@ -60,15 +60,15 @@ check "gh: no temp files left behind" sh -c "! ls '$AGENT_HUB_RUNTIME'/gh/*.tmp.
 for i in 1 2 3; do "$AH" list >/dev/null; done; sleep 0.5
 check "gh: and it is not asked again within the minute" sh -c "! grep -q 'pr list' '$GH_STUB_LOG'"
 
-# Ctrl+O: the cached URL opens directly; otherwise gh is asked; otherwise the footer says so.
+# o: the cached URL opens directly; otherwise gh is asked; otherwise the header says so.
 export AGENT_HUB_DASH_INST=4242
 out=$("$AH" dash --do pr t t:dev/api - feat/api "$TMP/repos/svc-a--api" "https://gh/pr/12" "$TMP/repos/svc-a")
-assert_eq "trigger(ctrl-r)" "$out" "ctrl-o: refreshes (the footer shows the result)"
-assert_eq "https://gh/pr/12" "$(tail -1 "$OPEN_STUB_LOG")" "ctrl-o: opens the cached PR"
+assert_eq "trigger(ctrl-r)" "$out" "o: refreshes (the header shows the result)"
+assert_eq "https://gh/pr/12" "$(tail -1 "$OPEN_STUB_LOG")" "o: opens the cached PR"
 GH_STUB_URL="https://gh/pr/99" "$AH" dash --do pr t t:dev/x - feat/x "$TMP/repos/svc-a" "" "$TMP/repos/svc-a" >/dev/null
-assert_eq "https://gh/pr/99" "$(tail -1 "$OPEN_STUB_LOG")" "ctrl-o: asks gh when the cache has no PR"
+assert_eq "https://gh/pr/99" "$(tail -1 "$OPEN_STUB_LOG")" "o: asks gh when the cache has no PR"
 "$AH" dash --do pr t t:dev/y - feat/y "$TMP/repos/svc-a" "" "$TMP/repos/svc-a" >/dev/null
-assert_contains "$("$AH" dash --footer)" "no pull request found for feat/y" "ctrl-o: no PR -> footer message"
+assert_contains "$("$AH" dash --header)" "no pull request found for feat/y" "o: no PR -> message in the header"
 
 # close: the PR state is part of what it reports.
 wt="$TMP/repos/svc-a--docs"

@@ -1,12 +1,7 @@
 # shellcheck shell=bash
-# agent-hub run: what a task pane (or the orchestrator pane) runs. tmux starts it directly, so the
+# agent-hub run: what a task pane runs. tmux starts it directly, so the
 # prompt arrives as an argument without any shell parsing. When Claude exits, the pane keeps a
 # login shell in the same directory.
-
-ORCH_PROMPT="You are the agent-hub orchestrator, running in the hub (the hq tmux session). \
-Manage agents only through the agent-hub CLI, following the agent-hub skill. When the user asks \
-for any work (fix, investigate, implement, review...), create an agent for it with \
-'agent-hub new ... --prompt' instead of doing the work yourself. Keep replies short."
 
 run_state() { # run_state <status>: this pane's status, as the dashboard shows it
   [ -n "${TMUX_PANE:-}" ] || return 0
@@ -29,9 +24,9 @@ exit "$rc"'
 
 run_fg() { /bin/bash --noprofile --norc -i -c "$RUN_FG" agent-hub "$@"; }
 
-cmd_run() { # run agent|orchestrator <name> [--resume] [-- prompt]
-  local kind=${1:-} name=${2:-} resume=0 prompt="" has_prompt=0 rc start
-  [ $# -ge 2 ] || die "$EX_ERR" "usage: run agent|orchestrator <name> [--resume] [-- prompt]"
+cmd_run() { # run agent <name> [--resume] [-- prompt]
+  local name=${2:-} resume=0 prompt="" has_prompt=0 rc start
+  [ $# -ge 2 ] || die "$EX_ERR" "usage: run agent <name> [--resume] [-- prompt]"
   shift 2
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -51,7 +46,6 @@ $cfg_agent_cmd
 EOF
   [ "${#argv[@]}" -gt 0 ] || argv=(claude)
   argv=("${argv[@]}" --name "$name")
-  [ "$kind" = orchestrator ] && argv=("${argv[@]}" --append-system-prompt "$ORCH_PROMPT")
 
   run_state starting
   if ! command -v "${argv[0]}" >/dev/null 2>&1; then
