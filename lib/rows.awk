@@ -170,7 +170,7 @@ function sortkey(n,   g, s) {
 function age(s,   d) {
   if (s == "") return ""
   d = now - s; if (d < 0) d = 0
-  if (d < 60) return d "s"
+  if (d < 60) return "now" # minutes at most: an idle list changes once a minute, not every refresh
   if (d < 3600) return int(d / 60) "m"
   if (d < 86400) return int(d / 3600) "h"
   return int(d / 86400) "d"

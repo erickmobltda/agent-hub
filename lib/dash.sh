@@ -2,11 +2,13 @@
 # The dashboard (fzf). One UI in two places: the hub's top pane (--hq: stays open, Enter switches
 # the client) and the Ctrl+Q popup (--popup: Enter switches and closes it).
 #
-# Rows come from rows.awk (kind id target display + hidden fields, see there). Actions that need
-# the terminal run through `execute` and leave their follow-up (refresh, close the popup, another
-# key) in a per-dashboard "next" file that `dash --next` hands back to fzf. Messages for the footer
-# go to a "msg" file that the `load` event (after every refresh) turns into the footer: a footer
-# changed while fzf reloads with tracking on would be lost.
+# Rows come from rows.awk (kind id target display + hidden fields, see there). Refreshing never
+# blocks typing: `dash --refresh` runs in the background (bg-transform), writes the rows to a file
+# and only asks fzf to reload (from that file, instantly) when they changed.
+# Actions that need the terminal run through `execute` and leave their follow-up (refresh, close
+# the popup, another key) in a per-dashboard "next" file that `dash --next` hands back to fzf.
+# Footer messages (dash_msg) are applied by the refresh too: after a reload through the `load`
+# event, since a footer changed while fzf reloads with tracking on would be lost.
 
 # No Ctrl+Z here: users then press it inside Claude, where it suspends Claude Code instead.
 DASH_LEGEND="enter open · tab actions · ^r refresh
@@ -24,6 +26,29 @@ dash_footer() {
   [ $(( $(date +%s) - ${ts:-0} )) -lt 60 ] && printf '%s\n' "$msg"
   return 0
 }
+dash_rows_file() { printf '%s/dash-%s.rows\n' "$(runtime_dir)" "${AGENT_HUB_DASH_INST:-$$}"; }
+
+# Background refresh: prints the fzf actions to apply. Rows are reloaded only when they changed
+# (then the footer comes with the `load` event); the preview (the agent's live screen) always.
+dash_refresh() {
+  local f tmp foot actions='refresh-preview'
+  f=$(dash_rows_file); tmp="$f.$$"
+  rows "${AGENT_HUB_DASH_MODE:-popup}" > "$tmp" 2>/dev/null
+  foot=$(dash_footer)
+  if cmp -s "$tmp" "$f"; then
+    rm -f "$tmp"
+    if [ "$foot" != "$(cat "$f.footer" 2>/dev/null)" ]; then
+      printf '%s\n' "$foot" > "$f.footer"
+      actions="$actions+change-footer:$foot"
+    fi
+  else
+    printf '%s\n' "$foot" > "$f.footer"
+    mv "$tmp" "$f"
+    actions='track-current+reload-sync(cat "$AGENT_HUB_DASH_ROWS")+refresh-preview'
+  fi
+  printf '%s\n' "$actions"
+}
+
 dash_next() {
   local f a='trigger(ctrl-r)'
   f=$(dash_next_file)
@@ -32,12 +57,19 @@ dash_next() {
   printf '%s\n' "$a"
 }
 
-dash_clean_sockets() { # sockets of dashboards that are gone
+dash_clean_sockets() { # files of dashboards (and GitHub refreshes) that are gone
   local s pid
-  for s in "$(runtime_dir)"/dash-*.sock; do
+  for s in "$(runtime_dir)"/dash-*.sock "$(runtime_dir)"/dash-*.rows*; do
     [ -e "$s" ] || continue
-    pid=${s##*-}; pid=${pid%.sock}
+    case "$s" in
+      *.sock) pid=${s##*-}; pid=${pid%.sock} ;;
+      *) pid=${s##*/dash-}; pid=${pid%%.*} ;;
+    esac
     kill -0 "$pid" 2>/dev/null || rm -f "$s"
+  done
+  for s in "$(runtime_dir)"/gh/*.tmp.*; do
+    [ -e "$s" ] || continue
+    kill -0 "${s##*.}" 2>/dev/null || rm -f "$s"
   done
 }
 
@@ -51,6 +83,7 @@ cmd_dash() {
     --do) shift; dash_do "$@" ;;
     --next) dash_next ;;
     --footer) dash_footer ;;
+    --refresh) dash_refresh ;;
     *) die "$EX_ERR" "usage: dash [--hq|--popup]" ;;
   esac
 }
@@ -70,24 +103,25 @@ dash_run() { # dash_run <hq|popup>
   sock="$(runtime_dir)/dash-$mode-$$.sock"
   rm -f "$sock"
   AGENT_HUB_BIN=$(ah_bin) AGENT_HUB_DASH_MODE=$mode AGENT_HUB_DASH_INST=$$
-  export AGENT_HUB_BIN AGENT_HUB_DASH_MODE AGENT_HUB_DASH_INST
+  AGENT_HUB_DASH_ROWS=$(dash_rows_file)
+  export AGENT_HUB_BIN AGENT_HUB_DASH_MODE AGENT_HUB_DASH_INST AGENT_HUB_DASH_ROWS
   unset FZF_DEFAULT_OPTS FZF_DEFAULT_OPTS_FILE
   # In the hub, fzf must not exit; the popup has tmux's own border and closes on esc.
   esc='esc:clear-query,ctrl-c:clear-query'
   border='--border=rounded'
   [ "$mode" = popup ] && { esc='esc:abort'; border='--border=none'; }
-  rows "$mode" | fzf --ansi --layout=reverse --tiebreak=index --no-multi \
+  dash_footer > "$AGENT_HUB_DASH_ROWS.footer"
+  rows "$mode" | tee "$AGENT_HUB_DASH_ROWS" | fzf --ansi --layout=reverse --tiebreak=index --no-multi \
     --delimiter='\t' --with-nth=4 --id-nth=2 --listen="$sock" --with-shell='/bin/bash -c' \
-    --prompt='  ' --ghost='type to filter · tab: actions' --info=inline-right \
-    --info-command='echo "$FZF_MATCH_COUNT/$FZF_TOTAL_COUNT"' \
+    --prompt='> ' --info=inline-right \
     --header="$DASH_LEGEND" --header-first --color='header:dim' \
     "$border" --border-label=' agent-hub ' --border-label-pos=3 \
     --preview='"$AGENT_HUB_BIN" dash --preview {1} {2} {3} {5} {6} {7} {8} {9} {10} {11} {12} {13} {14} {15}' \
     --preview-window='right,55%,border-left,<110(down,50%,border-top)' \
-    --bind='ctrl-r:track-current+reload-sync("$AGENT_HUB_BIN" dash --lines)+refresh-preview' \
+    --bind='ctrl-r:bg-transform:"$AGENT_HUB_BIN" dash --refresh' \
     --bind='change:first' \
-    --bind='load:transform-footer:"$AGENT_HUB_BIN" dash --footer' \
-    --bind='every(5):bg-transform:[ "${FZF_IDLE_TIME:-0}" -ge 2 ] && echo "trigger(ctrl-r)"' \
+    --bind='load:untrack-current+transform-footer:cat "$AGENT_HUB_DASH_ROWS.footer" 2>/dev/null' \
+    --bind='every(5):bg-transform:[ "${FZF_IDLE_TIME:-0}" -ge 2 ] && "$AGENT_HUB_BIN" dash --refresh' \
     --bind='enter,double-click:transform:"$AGENT_HUB_BIN" dash --do open {1} {2} {3}' \
     --bind='alt-enter:transform:"$AGENT_HUB_BIN" dash --do zoom {1} {2} {3}' \
     --bind='ctrl-o:transform:"$AGENT_HUB_BIN" dash --do pr {1} {2} {3} {9} {10} {14} {16}' \
@@ -97,14 +131,14 @@ dash_run() { # dash_run <hq|popup>
     --bind='ctrl-x:execute("$AGENT_HUB_BIN" dash --do close {1} {2} {3})+transform:"$AGENT_HUB_BIN" dash --next' \
     --bind='ctrl-g:execute("$AGENT_HUB_BIN" dash --do move {1} {2} {3})+transform:"$AGENT_HUB_BIN" dash --next' \
     --bind="$esc" >/dev/null
-  rm -f "$sock" "$(dash_next_file)" "$(dash_msg_file)"
+  rm -f "$sock" "$(dash_next_file)" "$(dash_msg_file)" "$AGENT_HUB_DASH_ROWS" "$AGENT_HUB_DASH_ROWS.footer"
 }
 
 elapsed() { # elapsed <epoch>
   [ -n "${1:-}" ] || return 0
   local s=$(( $(date +%s) - $1 ))
   [ "$s" -lt 0 ] && s=0
-  if [ "$s" -lt 60 ]; then printf '%ds' "$s"
+  if [ "$s" -lt 60 ]; then printf 'now'
   elif [ "$s" -lt 3600 ]; then printf '%dm' $((s / 60))
   elif [ "$s" -lt 86400 ]; then printf '%dh' $((s / 3600))
   else printf '%dd' $((s / 86400)); fi

@@ -47,6 +47,19 @@ check "gh: not logged in -> no calls" sh -c "! grep -q 'pr list' '$GH_STUB_LOG'"
 rm -f "$AGENT_HUB_RUNTIME/gh/auth"
 "$AH" list >/dev/null; wait_for 5 test -s "$cache"
 
+# A repo gh can't answer for (no GitHub remote): the cache is still written, so it is not asked
+# again on every refresh (that used to loop: refresh -> gh -> poke -> refresh).
+git init -q -b main "$TMP/repos/local"; (cd "$TMP/repos/local" && git config user.email t@t && git config user.name t && echo x > f && git add f && git commit -qm m)
+"$AH" new --group dev --repo local --task nogh >/dev/null 2>&1
+lcache="$AGENT_HUB_RUNTIME/gh/$(printf '%s' "$TMP/repos/local" | tr '/' '_').tsv"
+GH_STUB_JSON=/nonexistent "$AH" list >/dev/null
+wait_for 5 test -e "$lcache"
+check "gh: a repo without PRs still gets a cache" test -e "$lcache"
+check "gh: no temp files left behind" sh -c "! ls '$AGENT_HUB_RUNTIME'/gh/*.tmp.* >/dev/null 2>&1"
+: > "$GH_STUB_LOG"
+for i in 1 2 3; do "$AH" list >/dev/null; done; sleep 0.5
+check "gh: and it is not asked again within the minute" sh -c "! grep -q 'pr list' '$GH_STUB_LOG'"
+
 # Ctrl+O: the cached URL opens directly; otherwise gh is asked; otherwise the footer says so.
 export AGENT_HUB_DASH_INST=4242
 out=$("$AH" dash --do pr t t:dev/api - feat/api "$TMP/repos/svc-a--api" "https://gh/pr/12" "$TMP/repos/svc-a")

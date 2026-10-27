@@ -59,6 +59,15 @@ wait_for 2 sh -c "curl -s -m 1 --unix-socket '$sock' http://localhost | jq -r .c
 assert_contains "$(fzf_current "$sock")" "dev/docs" "dash: typing focuses the best match"
 fzf_post "$sock" 'clear-query'
 
+# Typing while refreshes keep coming (hook events from busy agents) loses no key.
+fzf_post "$sock" 'clear-query'
+( for i in $(seq 1 40); do curl -s -m 1 --unix-socket "$sock" -XPOST http://localhost -d 'trigger(ctrl-r)' >/dev/null; sleep 0.02; done ) &
+for c in o p s / i n f r a; do tm send-keys -t "$dpane" -l "$c"; sleep 0.05; done
+wait
+sleep 0.5
+assert_eq "ops/infra" "$(fzf_get "$sock" | jq -r .query)" "dash: no key lost while refreshes keep coming"
+fzf_post "$sock" 'clear-query'
+
 # Enter (hub mode): the client switches to the task; the dashboard stays open.
 client=$(start_client scratch)
 tm select-window -t scratch:dash

@@ -53,7 +53,7 @@ gh_refresh_bg() { # repo paths on stdin; each refresh runs detached
 }
 
 cmd_gh_refresh() { # _gh-refresh <repo>: one gh call, newest PRs first
-  local repo=${1:-} f lock json
+  local repo=${1:-} f lock json changed
   [ -d "$repo" ] || return 0
   config_load || true
   f=$(gh_cache_file "$repo")
@@ -61,10 +61,18 @@ cmd_gh_refresh() { # _gh-refresh <repo>: one gh call, newest PRs first
   lock_take "$lock" 0 || return 0
   json=$(cd "$repo" && GH_PROMPT_DISABLED=1 gh pr list --author @me --state all --limit 30 \
     --json number,state,isDraft,headRefName,statusCheckRollup,url 2>/dev/null)
-  { printf '#ts %s\n' "$(date +%s)"; [ -n "$json" ] && printf '%s' "$json" | jq -r "$GH_JQ" 2>/dev/null; } > "$f.tmp.$$" &&
-    mv "$f.tmp.$$" "$f"
+  # Written even when gh answers nothing (no GitHub remote, offline): the timestamp is what keeps
+  # this repo from being asked again on every refresh.
+  {
+    printf '#ts %s\n' "$(date +%s)"
+    if [ -n "$json" ]; then printf '%s' "$json" | jq -r "$GH_JQ" 2>/dev/null; fi
+  } > "$f.tmp.$$"
+  changed=1
+  [ -f "$f" ] && [ "$(tail -n +2 "$f")" = "$(tail -n +2 "$f.tmp.$$")" ] && changed=0
+  mv "$f.tmp.$$" "$f"
   lock_drop "$lock"
-  dash_poke
+  [ "$changed" = 1 ] && dash_poke
+  return 0
 }
 
 open_url() {
