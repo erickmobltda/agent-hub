@@ -35,6 +35,7 @@ dash_views() {
   local f view
   f=$(dash_rows_file)
   view=$(cat "$f.view" 2>/dev/null); [ "$view" = flat ] || view=tree
+  [ -s "$f.view" ] || echo tree > "$f.view"
   rows "${AGENT_HUB_DASH_MODE:-popup}" tree "$f.flat.$$" > "$f.tree.$$" 2>/dev/null
   if cmp -s "$f.$view.$$" "$f.$view"; then
     mv "$f.tree.$$" "$f.tree"; mv "$f.flat.$$" "$f.flat"
@@ -46,12 +47,20 @@ dash_views() {
 
 # Reloads the view on screen; the reload reads the view when it runs, so a switch to the flat view
 # made meanwhile (first key typed) still wins.
-DASH_RELOAD='track-current+reload-sync(cat "$AGENT_HUB_DASH_ROWS.$(cat "$AGENT_HUB_DASH_ROWS.view")")+refresh-preview'
+DASH_RELOAD='track-current+reload-sync(cat "$AGENT_HUB_DASH_ROWS.$(cat "$AGENT_HUB_DASH_ROWS.view" 2>/dev/null || echo tree)")+refresh-preview'
+
+# Fingerprint of the code: a dashboard started before an update keeps its old fzf bindings in
+# memory while calling the new scripts, so it closes itself instead (the hub's restarts at once).
+dash_stamp() { cat "$AGENT_HUB_HOME"/bin/agent-hub "$AGENT_HUB_HOME"/lib/*.sh "$AGENT_HUB_HOME"/lib/rows.awk 2>/dev/null | cksum; }
 
 # Background refresh: prints the fzf actions to apply. Rows are reloaded only when they changed
 # (then the footer comes with the `load` event); the preview (the agent's live screen) always.
 dash_refresh() {
   local f foot actions='refresh-preview'
+  if [ -n "${AGENT_HUB_DASH_STAMP:-}" ] && [ "$(dash_stamp)" != "$AGENT_HUB_DASH_STAMP" ]; then
+    echo abort
+    return
+  fi
   f=$(dash_rows_file)
   foot=$(dash_footer)
   if dash_views; then
@@ -114,12 +123,11 @@ cmd_dash() {
   esac
 }
 
-dash_loop() { # the hub pane: fzf never stays closed, Ctrl-C included
+dash_loop() { # the hub pane: fzf never stays closed (Ctrl-C included) and restarts on new code
   trap : INT
-  while :; do
-    dash_run hq
-    sleep 0.3
-  done
+  dash_run hq
+  sleep 0.3
+  exec "$(ah_bin)" dash --hq
 }
 
 dash_run() { # dash_run <hq|popup>
@@ -129,8 +137,8 @@ dash_run() { # dash_run <hq|popup>
   sock="$(runtime_dir)/dash-$mode-$$.sock"
   rm -f "$sock"
   AGENT_HUB_BIN=$(ah_bin) AGENT_HUB_DASH_MODE=$mode AGENT_HUB_DASH_INST=$$
-  AGENT_HUB_DASH_ROWS=$(dash_rows_file)
-  export AGENT_HUB_BIN AGENT_HUB_DASH_MODE AGENT_HUB_DASH_INST AGENT_HUB_DASH_ROWS
+  AGENT_HUB_DASH_ROWS=$(dash_rows_file) AGENT_HUB_DASH_STAMP=$(dash_stamp)
+  export AGENT_HUB_BIN AGENT_HUB_DASH_MODE AGENT_HUB_DASH_INST AGENT_HUB_DASH_ROWS AGENT_HUB_DASH_STAMP
   unset FZF_DEFAULT_OPTS FZF_DEFAULT_OPTS_FILE
   # In the hub, fzf must not exit; the popup has tmux's own border and closes on esc.
   esc='esc:clear-query,ctrl-c:clear-query'

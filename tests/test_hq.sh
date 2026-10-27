@@ -33,6 +33,22 @@ wait_for 5 sh -c "ls '$AGENT_HUB_RUNTIME'/dash-hq-*.sock >/dev/null 2>&1"
 check "hq: the dashboard comes back when fzf dies" sh -c "ls '$AGENT_HUB_RUNTIME'/dash-hq-*.sock >/dev/null 2>&1"
 assert_eq "$dash" "$(role_pane dashboard)" "hq: same pane"
 
+# An update of the code on disk restarts the hub's dashboard (no fzf with stale bindings).
+cp -R "$ROOT" "$TMP/ahcopy"
+tm respawn-pane -k -t "$dash" -- "$TMP/ahcopy/bin/agent-hub" dash --hq
+wait_for 5 sh -c "ls '$AGENT_HUB_RUNTIME'/dash-hq-*.sock >/dev/null 2>&1"
+old_sock=$(dash_sock hq)
+wait_for 3 sh -c "pgrep -f 'listen=$old_sock' >/dev/null"
+old_fzf=$(pgrep -f "listen=$old_sock" | head -1)
+printf '\n# changed\n' >> "$TMP/ahcopy/lib/dash.sh"
+curl -s -m 1 --unix-socket "$old_sock" -XPOST http://localhost -d 'trigger(ctrl-r)' >/dev/null
+wait_for 6 sh -c "p=\$(pgrep -f 'listen=$old_sock' | head -1); [ -n \"\$p\" ] && [ \"\$p\" != '$old_fzf' ]"
+new_fzf=$(pgrep -f "listen=$old_sock" | head -1)
+check "update: the dashboard restarted itself on the new code" sh -c "[ -n '$new_fzf' ] && [ '$new_fzf' != '$old_fzf' ]"
+assert_eq "$dash" "$(role_pane dashboard)" "update: same pane"
+tm respawn-pane -k -t "$dash" -- "$AH" dash --hq
+wait_for 5 sh -c "ls '$AGENT_HUB_RUNTIME'/dash-hq-*.sock >/dev/null 2>&1"
+
 # Missing pieces are re-created.
 tm kill-pane -t "$(role_pane orchestrator)"
 "$AH" hq >/dev/null 2>&1
