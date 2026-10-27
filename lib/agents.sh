@@ -139,15 +139,16 @@ EOF
 
 # --- rows (shared by list and the dashboard) ---------------------------------------------
 
-rows() { # rows <raw|hq|popup>
-  local mode=$1 gh=0 stale="" ghdir
+rows() { # rows <raw|hq|popup> [tree|flat] [file for the other view]
+  local mode=$1 view=${2:-tree} also=${3:-} gh=0 stale="" ghdir
   ghdir=$(runtime_dir gh)
   if gh_enabled; then gh=1; stale="$ghdir/stale.$$"; : > "$stale"; fi
   {
     marker_files | sed "s/^/M$TAB/"
     t list-panes -a -F "P$TAB#{session_name}$TAB#{window_name}$TAB#{window_id}$TAB#{pane_id}$TAB#{pane_index}$TAB#{@agent_hub_role}$TAB#{@agent_status}$TAB#{@agent_since}$TAB#{@agent_note}$TAB#{@agent_worktree}$TAB#{pane_current_path}$TAB#{pane_current_command}$TAB#{?#{==:#{pane_title},#{host}},,#{pane_title}}$TAB#{pane_dead}" 2>/dev/null
     t list-sessions -F "S$TAB#{session_name}$TAB#{session_windows}$TAB#{pane_current_path}$TAB#{pane_id}" 2>/dev/null
-  } | AH_MODE=$mode AH_HQ=$cfg_hq_session AH_GH=$gh AH_GHDIR=$ghdir AH_STALE=$stale awk -f "$AGENT_HUB_HOME/lib/rows.awk"
+  } | AH_MODE=$mode AH_HQ=$cfg_hq_session AH_GH=$gh AH_GHDIR=$ghdir AH_STALE=$stale AH_VIEW=$view AH_ALSO=$also \
+      AH_COLLAPSED="$(runtime_dir)/collapsed" awk -f "$AGENT_HUB_HOME/lib/rows.awk"
   if [ -n "$stale" ]; then
     [ -s "$stale" ] && gh_refresh_bg < "$stale"
     rm -f "$stale"

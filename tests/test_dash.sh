@@ -10,14 +10,24 @@ tm set -p -t "$p_api" @agent_status working \; set -p -t "$p_api" @agent_since $
 tm set -p -t "$p_docs" @agent_status waiting \; set -p -t "$p_docs" @agent_since $((now - 300)) \; set -p -t "$p_docs" @agent_note Bash
 tm set -p -t "$p_infra" @agent_status done \; set -p -t "$p_infra" @agent_since $((now - 7200))
 lines() { AGENT_HUB_DASH_MODE=$1 "$AH" dash --lines; }
+flat() { AGENT_HUB_DASH_MODE=$1 AGENT_HUB_DASH_VIEW=flat "$AH" dash --lines; }
 
-# Rows: kind, id, display; the most urgent group first; sessions last; hub row only in the popup.
-assert_eq "t:dev/docs t:dev/api t:ops/infra s:scratch" "$(lines hq | cut -f2 | tr '\n' ' ' | sed 's/ $//')" "rows: order and ids (hub)"
-assert_eq "h: t:dev/docs" "$(lines popup | cut -f2 | head -2 | tr '\n' ' ' | sed 's/ $//')" "rows: hub row first in the popup"
-row=$(lines hq | awk -F'\t' '$2 == "t:dev/docs" { print $4 }' | strip_ansi)
-assert_eq "◐ waiting  dev/docs   svc-a    5m · Bash" "$(printf '%s' "$row" | sed 's/  *$//')" "rows: waiting row shows age and what it waits for"
+# Rows: a tree of groups (the most urgent first), their tasks under them, sessions last; the hub
+# row only in the popup. The flat view (shown while typing) has the same items.
+assert_eq "g:dev t:dev/docs t:dev/api g:ops t:ops/infra g:*sessions s:scratch" "$(lines hq | cut -f2 | tr '\n' ' ' | sed 's/ $//')" "rows: tree order and ids (hub)"
+assert_eq "h: g:dev t:dev/docs" "$(lines popup | cut -f2 | head -3 | tr '\n' ' ' | sed 's/ $//')" "rows: hub row first in the popup"
+assert_eq "▾ dev (2) ◐1 ●1" "$(lines hq | awk -F'\t' '$2 == "g:dev" { print $4 }' | strip_ansi)" "rows: group header with counts per state"
+assert_eq "  ├─ ◐ docs     svc-a    waiting 5m · Bash" "$(lines hq | awk -F'\t' '$2 == "t:dev/docs" { print $4 }' | strip_ansi | sed 's/  *$//')" "rows: task under its group: state, age, why it waits"
+assert_eq "  └─ ● api      svc-a    working 2m" "$(lines hq | awk -F'\t' '$2 == "t:dev/api" { print $4 }' | strip_ansi | sed 's/  *$//')" "rows: last task of a group"
+assert_eq "◐ waiting  dev/docs   svc-a    5m · Bash" "$(flat hq | awk -F'\t' '$2 == "t:dev/docs" { print $4 }' | strip_ansi | sed 's/  *$//')" "rows: flat view row"
+assert_eq "t:dev/docs t:dev/api t:ops/infra s:scratch" "$(flat hq | cut -f2 | tr '\n' ' ' | sed 's/ $//')" "rows: flat view has no headers"
 assert_eq "$p_api" "$(lines hq | awk -F'\t' '$2 == "t:dev/api" { print $3 }')" "rows: target of a live task is its Claude pane"
-assert_contains "$(lines hq | awk -F'\t' '$1 == "s" { print $4 }' | strip_ansi)" "▪ session  scratch" "rows: plain sessions listed"
+assert_contains "$(lines hq | awk -F'\t' '$1 == "s" { print $4 }' | strip_ansi)" "└─ ▪ scratch" "rows: plain sessions under 'sessions'"
+echo ops > "$AGENT_HUB_RUNTIME/collapsed"
+assert_eq "g:dev t:dev/docs t:dev/api g:ops g:*sessions s:scratch" "$(lines hq | cut -f2 | tr '\n' ' ' | sed 's/ $//')" "rows: a collapsed group hides its tasks"
+assert_contains "$(lines hq | awk -F'\t' '$2 == "g:ops" { print $4 }' | strip_ansi)" "▸ ops" "rows: collapsed header"
+check "rows: the flat view still has them" sh -c "AGENT_HUB_DASH_MODE=hq AGENT_HUB_DASH_VIEW=flat '$AH' dash --lines | grep -q 't:ops/infra'"
+rm -f "$AGENT_HUB_RUNTIME/collapsed"
 
 # PR badge read from the cache (no network in the list).
 gh_dir="$AGENT_HUB_RUNTIME/gh"; mkdir -p "$gh_dir"
@@ -44,16 +54,40 @@ wait_for 5 sh -c "ls '$AGENT_HUB_RUNTIME'/dash-hq-*.sock >/dev/null 2>&1"
 sock=$(dash_sock hq)
 check "dash: fzf listening on a unix socket" [ -S "$sock" ]
 check "dash: stale socket of a dead dashboard removed" [ ! -e "$AGENT_HUB_RUNTIME/dash-popup-999999.sock" ]
-wait_for 3 sh -c "curl -s -m 1 --unix-socket '$sock' http://localhost | jq -e '.totalCount == 4' >/dev/null"
-assert_eq "4" "$(fzf_get "$sock" | jq '.totalCount')" "dash: 3 tasks + 1 session"
+wait_for 3 sh -c "curl -s -m 1 --unix-socket '$sock' http://localhost | jq -e '.totalCount == 7' >/dev/null"
+assert_eq "7" "$(fzf_get "$sock" | jq '.totalCount')" "dash: 3 tasks + 1 session + 3 group headers"
 
 # A hook event reaches the dashboard at once (push), and the cursor keeps its row across reloads.
-fzf_post "$sock" 'pos(3)'
-wait_for 2 sh -c "curl -s -m 1 --unix-socket '$sock' http://localhost | jq -r .current.text | grep -q ops/infra"
+fzf_post "$sock" 'pos(5)'
+wait_for 2 sh -c "curl -s -m 1 --unix-socket '$sock' http://localhost | jq -r .current.text | grep -q t:ops/infra"
 fire_hook "$p_infra" '{"hook_event_name":"PermissionRequest","tool_name":"Bash"}'
-wait_for 3 sh -c "curl -s -m 1 --unix-socket '$sock' 'http://localhost?limit=9' | jq -r '.matches[].text' | grep -q 'waiting  ops/infra'"
-assert_contains "$(fzf_lines "$sock")" "waiting  ops/infra" "dash: refreshes after a hook event"
-assert_contains "$(fzf_current "$sock")" "ops/infra" "dash: the cursor stays on the same task after the reload"
+wait_for 3 sh -c "curl -s -m 1 --unix-socket '$sock' 'http://localhost?limit=9' | jq -r '.matches[].text' | grep 't:ops/infra' | grep -q waiting"
+check "dash: refreshes after a hook event" sh -c "curl -s -m 1 --unix-socket '$sock' 'http://localhost?limit=9' | jq -r '.matches[].text' | grep 't:ops/infra' | grep -q waiting"
+assert_contains "$(fzf_current "$sock")" "t:ops/infra" "dash: the cursor stays on the same task after the reload"
+
+# Tree: Enter on a group header collapses it, again expands it; ← and → do the same.
+fzf_post "$sock" 'pos(4)'
+wait_for 2 sh -c "curl -s -m 1 --unix-socket '$sock' http://localhost | jq -r .current.text | grep -q '^g	g:ops'"
+tm send-keys -t "$dpane" Enter
+wait_for 3 sh -c "curl -s -m 1 --unix-socket '$sock' http://localhost | jq -e '.totalCount == 6' >/dev/null"
+assert_eq "6" "$(fzf_get "$sock" | jq '.totalCount')" "tree: enter on a header collapses the group"
+assert_contains "$(fzf_current "$sock")" "g:ops" "tree: the cursor stays on the header"
+tm send-keys -t "$dpane" Right
+wait_for 3 sh -c "curl -s -m 1 --unix-socket '$sock' http://localhost | jq -e '.totalCount == 7' >/dev/null"
+assert_eq "7" "$(fzf_get "$sock" | jq '.totalCount')" "tree: → expands it"
+tm send-keys -t "$dpane" Left
+wait_for 3 sh -c "curl -s -m 1 --unix-socket '$sock' http://localhost | jq -e '.totalCount == 6' >/dev/null"
+assert_eq "6" "$(fzf_get "$sock" | jq '.totalCount')" "tree: ← collapses it"
+# Typing switches to the flat view, so a task of a collapsed group is found; clearing comes back.
+tm send-keys -t "$dpane" -l "infra"
+wait_for 3 sh -c "curl -s -m 1 --unix-socket '$sock' http://localhost | jq -r .current.text | grep -q t:ops/infra"
+assert_contains "$(fzf_current "$sock")" "t:ops/infra" "search: finds a task of a collapsed group"
+check "search: flat lines, no tree" sh -c "! curl -s -m 1 --unix-socket '$sock' http://localhost | jq -r '.matches[].text' | grep -q '├─\|└─'"
+tm send-keys -t "$dpane" C-u
+wait_for 3 sh -c "curl -s -m 1 --unix-socket '$sock' http://localhost | jq -e '.totalCount == 6' >/dev/null"
+assert_eq "6" "$(fzf_get "$sock" | jq '.totalCount')" "search: clearing the query brings the tree back"
+tm send-keys -t "$dpane" Right
+wait_for 3 sh -c "curl -s -m 1 --unix-socket '$sock' http://localhost | jq -e '.totalCount == 7' >/dev/null"
 fzf_post "$sock" 'change-query(docs)'
 wait_for 2 sh -c "curl -s -m 1 --unix-socket '$sock' http://localhost | jq -r .current.text | grep -q dev/docs"
 assert_contains "$(fzf_current "$sock")" "dev/docs" "dash: typing focuses the best match"

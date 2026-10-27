@@ -2,9 +2,11 @@
 # The dashboard (fzf). One UI in two places: the hub's top pane (--hq: stays open, Enter switches
 # the client) and the Ctrl+Q popup (--popup: Enter switches and closes it).
 #
-# Rows come from rows.awk (kind id target display + hidden fields, see there). Refreshing never
-# blocks typing: `dash --refresh` runs in the background (bg-transform), writes the rows to a file
-# and only asks fzf to reload (from that file, instantly) when they changed.
+# Rows come from rows.awk (kind id target display + hidden fields, see there): a tree of groups
+# (Enter, ← and → collapse and expand them) that turns into a flat list while a query is typed,
+# because fzf only searches what it shows. Refreshing never blocks typing: `dash --refresh` runs in
+# the background (bg-transform), writes both views to files and only asks fzf to reload (from the
+# file of the current view, instantly) when they changed.
 # Actions that need the terminal run through `execute` and leave their follow-up (refresh, close
 # the popup, another key) in a per-dashboard "next" file that `dash --next` hands back to fzf.
 # Footer messages (dash_msg) are applied by the refresh too: after a reload through the `load`
@@ -28,25 +30,49 @@ dash_footer() {
 }
 dash_rows_file() { printf '%s/dash-%s.rows\n' "$(runtime_dir)" "${AGENT_HUB_DASH_INST:-$$}"; }
 
+# Writes both views ($f.tree, $f.flat); 0 when the one on screen ($f.view) changed.
+dash_views() {
+  local f view
+  f=$(dash_rows_file)
+  view=$(cat "$f.view" 2>/dev/null); [ "$view" = flat ] || view=tree
+  rows "${AGENT_HUB_DASH_MODE:-popup}" tree "$f.flat.$$" > "$f.tree.$$" 2>/dev/null
+  if cmp -s "$f.$view.$$" "$f.$view"; then
+    mv "$f.tree.$$" "$f.tree"; mv "$f.flat.$$" "$f.flat"
+    return 1
+  fi
+  mv "$f.tree.$$" "$f.tree"; mv "$f.flat.$$" "$f.flat"
+  return 0
+}
+
+# Reloads the view on screen; the reload reads the view when it runs, so a switch to the flat view
+# made meanwhile (first key typed) still wins.
+DASH_RELOAD='track-current+reload-sync(cat "$AGENT_HUB_DASH_ROWS.$(cat "$AGENT_HUB_DASH_ROWS.view")")+refresh-preview'
+
 # Background refresh: prints the fzf actions to apply. Rows are reloaded only when they changed
 # (then the footer comes with the `load` event); the preview (the agent's live screen) always.
 dash_refresh() {
-  local f tmp foot actions='refresh-preview'
-  f=$(dash_rows_file); tmp="$f.$$"
-  rows "${AGENT_HUB_DASH_MODE:-popup}" > "$tmp" 2>/dev/null
+  local f foot actions='refresh-preview'
+  f=$(dash_rows_file)
   foot=$(dash_footer)
-  if cmp -s "$tmp" "$f"; then
-    rm -f "$tmp"
-    if [ "$foot" != "$(cat "$f.footer" 2>/dev/null)" ]; then
-      printf '%s\n' "$foot" > "$f.footer"
-      actions="$actions+change-footer:$foot"
-    fi
-  else
+  if dash_views; then
     printf '%s\n' "$foot" > "$f.footer"
-    mv "$tmp" "$f"
-    actions='track-current+reload-sync(cat "$AGENT_HUB_DASH_ROWS")+refresh-preview'
+    actions=$DASH_RELOAD
+  elif [ "$foot" != "$(cat "$f.footer" 2>/dev/null)" ]; then
+    printf '%s\n' "$foot" > "$f.footer"
+    actions="$actions+change-footer:$foot"
   fi
   printf '%s\n' "$actions"
+}
+
+# Collapsed groups, shared by every dashboard: one name per line.
+dash_collapse() { # dash_collapse <group> <on|off|toggle>
+  local f="$(runtime_dir)/collapsed" on=0
+  grep -qxF -- "$1" "$f" 2>/dev/null && on=1
+  case "$2" in toggle) [ "$on" = 1 ] && set -- "$1" off || set -- "$1" on ;; esac
+  if [ "$2" = on ] && [ "$on" = 0 ]; then printf '%s\n' "$1" >> "$f"
+  elif [ "$2" = off ] && [ "$on" = 1 ]; then grep -vxF -- "$1" "$f" > "$f.$$"; mv "$f.$$" "$f"; fi
+  dash_views >/dev/null
+  printf '%s\n' "$DASH_RELOAD"
 }
 
 dash_next() {
@@ -78,12 +104,12 @@ cmd_dash() {
   case "${1:-}" in
     --hq) dash_loop ;;
     --popup|'') dash_run popup ;;
-    --lines) rows "${AGENT_HUB_DASH_MODE:-popup}" ;;
     --preview) shift; dash_preview "$@" ;;
     --do) shift; dash_do "$@" ;;
     --next) dash_next ;;
     --footer) dash_footer ;;
     --refresh) dash_refresh ;;
+    --lines) rows "${AGENT_HUB_DASH_MODE:-popup}" "${AGENT_HUB_DASH_VIEW:-tree}" ;;
     *) die "$EX_ERR" "usage: dash [--hq|--popup]" ;;
   esac
 }
@@ -111,27 +137,33 @@ dash_run() { # dash_run <hq|popup>
   border='--border=rounded'
   [ "$mode" = popup ] && { esc='esc:abort'; border='--border=none'; }
   dash_footer > "$AGENT_HUB_DASH_ROWS.footer"
-  rows "$mode" | tee "$AGENT_HUB_DASH_ROWS" | fzf --ansi --layout=reverse --tiebreak=index --no-multi \
+  echo tree > "$AGENT_HUB_DASH_ROWS.view"
+  rows "$mode" tree "$AGENT_HUB_DASH_ROWS.flat" | tee "$AGENT_HUB_DASH_ROWS.tree" |
+  fzf --ansi --layout=reverse --tiebreak=index --no-multi --highlight-line \
     --delimiter='\t' --with-nth=4 --id-nth=2 --listen="$sock" --with-shell='/bin/bash -c' \
-    --prompt='> ' --info=inline-right \
-    --header="$DASH_LEGEND" --header-first --color='header:dim' \
+    --prompt='❯ ' --info=inline-right --pointer='▌' \
+    --color='header:italic:dim,prompt:magenta:bold,pointer:magenta,info:dim,border:dim,separator:dim' \
+    --color='label:magenta:bold,hl:yellow:bold,hl+:yellow:bold,gutter:-1,scrollbar:dim,preview-border:dim' \
+    --header="$DASH_LEGEND" --header-first \
     "$border" --border-label=' agent-hub ' --border-label-pos=3 \
     --preview='"$AGENT_HUB_BIN" dash --preview {1} {2} {3} {5} {6} {7} {8} {9} {10} {11} {12} {13} {14} {15}' \
     --preview-window='right,55%,border-left,<110(down,50%,border-top)' \
     --bind='ctrl-r:bg-transform:"$AGENT_HUB_BIN" dash --refresh' \
-    --bind='change:first' \
+    --bind='change:transform:v=tree; [ -n {q} ] && v=flat; f=$AGENT_HUB_DASH_ROWS; if [ "$(cat "$f.view")" != "$v" ]; then echo "$v" > "$f.view"; echo "reload-sync(cat \"$f.$v\")+first"; else echo first; fi' \
+    --bind='right:transform:[ -z {q} ] && [ {1} = g ] && "$AGENT_HUB_BIN" dash --do expand {1} {2} {3} || echo forward-char' \
+    --bind='left:transform:[ -z {q} ] && [ {1} = g ] && "$AGENT_HUB_BIN" dash --do collapse {1} {2} {3} || echo backward-char' \
     --bind='load:untrack-current+transform-footer:cat "$AGENT_HUB_DASH_ROWS.footer" 2>/dev/null' \
     --bind='every(5):bg-transform:[ "${FZF_IDLE_TIME:-0}" -ge 2 ] && "$AGENT_HUB_BIN" dash --refresh' \
     --bind='enter,double-click:transform:"$AGENT_HUB_BIN" dash --do open {1} {2} {3}' \
     --bind='alt-enter:transform:"$AGENT_HUB_BIN" dash --do zoom {1} {2} {3}' \
     --bind='ctrl-o:transform:"$AGENT_HUB_BIN" dash --do pr {1} {2} {3} {9} {10} {14} {16}' \
     --bind='tab:execute("$AGENT_HUB_BIN" dash --do menu {1} {2} {3})+transform:"$AGENT_HUB_BIN" dash --next' \
-    --bind='ctrl-n:execute("$AGENT_HUB_BIN" dash --do new {1} {2} {3})+transform:"$AGENT_HUB_BIN" dash --next' \
+    --bind='ctrl-n:execute("$AGENT_HUB_BIN" dash --do new {1} {2} {3} {17})+transform:"$AGENT_HUB_BIN" dash --next' \
     --bind='ctrl-s:execute("$AGENT_HUB_BIN" dash --do send {1} {2} {3} {5})+transform:"$AGENT_HUB_BIN" dash --next' \
     --bind='ctrl-x:execute("$AGENT_HUB_BIN" dash --do close {1} {2} {3})+transform:"$AGENT_HUB_BIN" dash --next' \
     --bind='ctrl-g:execute("$AGENT_HUB_BIN" dash --do move {1} {2} {3})+transform:"$AGENT_HUB_BIN" dash --next' \
     --bind="$esc" >/dev/null
-  rm -f "$sock" "$(dash_next_file)" "$(dash_msg_file)" "$AGENT_HUB_DASH_ROWS" "$AGENT_HUB_DASH_ROWS.footer"
+  rm -f "$sock" "$(dash_next_file)" "$(dash_msg_file)" "$AGENT_HUB_DASH_ROWS".*
 }
 
 elapsed() { # elapsed <epoch>
@@ -154,8 +186,17 @@ dash_capture() { # dash_capture <pane> <lines>: the pane's screen without traili
 dash_preview() {
   local kind=$1 id=$2 target=$3 st=$4 since=$5 note=$6 repo=$7 br=$8 wt=$9
   local prn=${10:-} prs=${11:-} prc=${12:-} title=${14:-} lines=${FZF_PREVIEW_LINES:-40}
-  local B='\033[1m' D='\033[2m' R='\033[0m' pr="" where tilde='~'
+  local B='\033[1m' D='\033[2m' R='\033[0m' pr="" tilde='~'
   case "$kind" in
+    g)
+      if [ "$target" = "*sessions" ]; then
+        printf "${B}sessions${R}  ${D}your tmux sessions without agents · enter, ← and → collapse or expand${R}\n\n"
+        t list-sessions -F '#{session_name}  #{session_windows} windows  #{?session_attached,(attached),}' 2>/dev/null
+      else
+        printf "${B}%s${R}  ${D}group (tmux session) · enter, ← and → collapse or expand · ^n adds an agent here${R}\n\n" "$target"
+        rows raw | awk -F'\t' -v g="$target" '$2 == g { printf "  %-9s %-28s %-16s %s\n", $4, $3, $6, $7 }'
+      fi
+      return ;;
     s)
       printf "${B}%s${R}  ${D}tmux session${R}\n${D}%s${R}\n\n" "$target" "$(t display -p -t "=$target:" '#{window_name} · #{pane_current_path}' 2>/dev/null)"
       dash_capture "=$target:" $((lines - 3))
@@ -169,13 +210,17 @@ dash_preview() {
     permission_prompt) note=permission ;; elicitation_dialog|agent_needs_input) note=input ;;
     AskUserQuestion) note=question ;; ExitPlanMode) note="plan approval" ;;
   esac
-  where="$repo · ${br:-?}"
   if [ -n "$prn" ]; then
     pr="PR #$prn $(printf '%s' "$prs" | tr '[:upper:]' '[:lower:]')"
     case "$prc" in pass) pr="$pr · checks ✓" ;; fail) pr="$pr · checks ✗" ;; pending) pr="$pr · checks running" ;; esac
   fi
-  printf "${B}%s${R}  %s %s%s\n" "${id#?:}" "$st" "$(elapsed "$since")" "${note:+ · waiting for $note}"
-  printf "${D}%s${R}%s\n" "$where" "${pr:+  ·  $pr}"
+  local SC
+  case "$st" in
+    waiting) SC='\033[1;33m' ;; error) SC='\033[1;31m' ;; done) SC='\033[1;36m' ;;
+    working|starting) SC='\033[1;32m' ;; *) SC='\033[90m' ;;
+  esac
+  printf "\033[1;35m%s${R}  ${SC}%s${R} ${D}%s%s${R}\n" "${id#?:}" "$st" "$(elapsed "$since")" "${note:+ · waiting for $note}"
+  printf "\033[34m%s${R} ${D}·${R} \033[35m%s${R}%s\n" "$repo" "${br:-?}" "${pr:+  ·  $pr}"
   printf "${D}%s${R}\n" "${wt/#$HOME/$tilde}"
   [ -n "$title" ] && [ "$st" != stopped ] && printf "${D}“%s”${R}\n" "$title"
   printf "${D}%s${R}\n" '──────────────────────────────'
@@ -196,11 +241,13 @@ dash_do() {
   local action=$1 kind=$2 id=$3 target=$4
   shift 4
   case "$action" in
+    expand) dash_collapse "$target" off ;;
+    collapse) dash_collapse "$target" on ;;
     open) dash_open "$kind" "$id" "$target" 0 ;;
     zoom) dash_open "$kind" "$id" "$target" 1 ;;
     pr) dash_pr "$kind" "$@" ;;
     menu) dash_menu "$kind" "$id" ;;
-    new) ui_new_agent ;;
+    new) ui_new_agent "${1:-}" ;;
     send) ui_send "$kind" "$id" "$target" "${1:-}" ;;
     close) ui_close "$kind" "$id" ;;
     move) ui_move "$kind" "$id" ;;
@@ -211,6 +258,7 @@ dash_do() {
 dash_open() { # dash_open <kind> <id> <target> <zoom>
   local kind=$1 id=$2 target=$3 zoom=$4 err=""
   case "$kind" in
+    g) dash_collapse "$target" toggle; return ;;
     h) ensure_hq >/dev/null 2>&1; err=$(t switch-client -t "=$cfg_hq_session:" 2>&1) ;;
     s) err=$(t switch-client -t "=$target:" 2>&1) ;;
     p) err=$(pane_switch "$target" "$zoom" 2>&1) ;;
@@ -254,6 +302,7 @@ ctrl-x${TAB}close the task (removes its worktree)" ;;
     p) items="enter${TAB}open
 alt-enter${TAB}open zoomed
 ctrl-s${TAB}send a message" ;;
+    g) items="enter${TAB}collapse or expand  (also ← and →)" ;;
     *) items="enter${TAB}open" ;;
   esac
   items="$items

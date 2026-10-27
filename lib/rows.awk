@@ -5,10 +5,15 @@
 #   P  session window window_id pane_id pane_index role status since note worktree path command title dead
 #   S  session windows active_pane_path active_pane_id
 # ENVIRON: AH_MODE (raw | hq | popup), AH_HQ (hub session), AH_GH (1: read the PR cache),
-#   AH_GHDIR (cache dir), AH_STALE (file that receives repos whose cache is old), AH_TTL (seconds).
+#   AH_GHDIR (cache dir), AH_STALE (file that receives repos whose cache is old), AH_TTL (seconds),
+#   AH_VIEW (tree | flat: what goes to stdout), AH_ALSO (file that receives the other view),
+#   AH_COLLAPSED (file listing collapsed groups; their tasks are left out of the tree).
 # Output, hq/popup (fzf shows field 4):
-#   kind id target display status since note repo branch worktree pr_num pr_state pr_checks pr_url title repo_path
-#   kinds: t task (live or stopped) · p Claude started by hand · s plain session · h hub (popup only)
+#   kind id target display status since note repo branch worktree pr_num pr_state pr_checks pr_url title repo_path group
+#   kinds: g group header (tree only) · t task (live or stopped) · p Claude started by hand ·
+#          s plain session · h hub (popup only). The "sessions" group is called *sessions.
+#   tree: headers with the group's tasks under them (├─ └─); flat: one line per item, group/task
+#   (the dashboard shows the flat view while a query is typed: fzf only searches what is shown).
 # Output, raw:
 #   kind group task status since repo branch pane window worktree live pr_num pr_state pr_checks pr_url note
 
@@ -23,9 +28,12 @@ BEGIN {
   rank["idle"] = 4; rank["stopped"] = 5
   icon["waiting"] = "◐"; icon["error"] = "✗"; icon["done"] = "✓"; icon["starting"] = "⟳"
   icon["working"] = "●"; icon["idle"] = "○"; icon["stopped"] = "◌"
-  E = "\033["; R = E "0m"; DIM = E "2m"; BOLD = E "1m"
+  E = "\033["; R = E "0m"; DIM = E "2m"; BOLD = E "1m"; GRAY = E "90m"; BLUE = E "34m"
+  GROUP = E "1;35m"; SESS = E "1;34m"
   col["waiting"] = E "1;33m"; col["error"] = E "1;31m"; col["done"] = E "1;36m"; col["starting"] = E "32m"
-  col["working"] = E "32m"; col["idle"] = ""; col["stopped"] = DIM
+  col["working"] = E "1;32m"; col["idle"] = E "37m"; col["stopped"] = GRAY
+  f = ENVIRON["AH_COLLAPSED"]
+  if (f != "") { while ((getline l < f) > 0) if (l != "") C[l] = 1; close(f) }
   why["permission_prompt"] = "permission"; why["elicitation_dialog"] = "input"; why["agent_needs_input"] = "input"
   why["AskUserQuestion"] = "question"; why["ExitPlanMode"] = "plan"
 }
@@ -152,7 +160,7 @@ function build(   i, n, sc, best, k, st, used, usedsess, hub) {
   if (mode == "raw") return
   for (i = 1; i <= ns; i++) {
     if (sn[i] == hq || (sn[i] in usedsess)) continue
-    add("s", "s:" sn[i], sn[i], "", sn[i], "", "", "", "", "", spath[i], spane[i], "", "", swin[i])
+    add("s", "s:" sn[i], sn[i], "*sessions", sn[i], "", "", "", "", "", spath[i], spane[i], "", "", swin[i])
   }
   if (mode == "popup") {
     if (hub) add("h", "h:", pid[hub], "", "hub", (pst[hub] == "" ? "stopped" : pst[hub]), psince[hub], pnote[hub], "", "", "", pid[hub], pwid[hub], ptitle[hub], "")
@@ -203,26 +211,84 @@ function prcolor(n,   c, s) {
   return s
 }
 
-function display(n,   st, nm, g, task, rest, a, w) {
+function tilde(p) {
+  if (ENVIRON["HOME"] != "" && index(p, ENVIRON["HOME"]) == 1) return "~" substr(p, length(ENVIRON["HOME"]) + 1)
+  return p
+}
+
+function spaces(n) { return n > 0 ? substr(sprintf("%" n "s", ""), 1, n) : "" }
+
+function tail(n,   rest) { # "<state> <age> · <why>", the end of a task line in the tree
+  rest = ago(n)
+  return col[rst[n]] rst[n] R (rest == "" ? "" : " " GRAY rest R)
+}
+
+# Flat view: one line per item, group/task (what the search shows).
+function display(n,   st, nm, g, task, w) {
   st = rst[n]
   if (rk[n] == "s") {
     w = rextra[n] (rextra[n] == "1" ? " window" : " windows")
-    a = rwt[n]; if (ENVIRON["HOME"] != "" && index(a, ENVIRON["HOME"]) == 1) a = "~" substr(a, length(ENVIRON["HOME"]) + 1)
-    return DIM "▪ session " R " " pad(rname[n], wname) "  " DIM pad(w, wrepo) R "  " DIM a R
+    return BLUE "▪" R " " GRAY pad("session", 8) R " " BOLD pad(rname[n], wname) R "  " GRAY pad(w, wrepo) R "  " GRAY tilde(rwt[n]) R
   }
   if (rk[n] == "h") {
-    return BOLD "⌂" R " " col[st] pad(st, 8) R " " BOLD pad("hub", wname) R "  " DIM "orchestrator: create, list and close agents by asking" R
+    return GROUP "⌂" R " " BOLD pad("hub", 8 + 1 + wname) R "  " GRAY "orchestrator" R " · " tail(n)
   }
   nm = rname[n]; g = nm; sub(/\/.*/, "", g); task = substr(nm, length(g) + 2)
-  rest = age(rsince[n])
-  if (st == "waiting" && rnote[n] != "") rest = rest " · " ((rnote[n] in why) ? why[rnote[n]] : rnote[n])
-  if (rk[n] == "p") rest = rest (rest == "" ? "" : " · ") "started by hand"
-  return col[st] icon[st] " " pad(st, 8) R " " DIM g "/" R BOLD task R substr(sprintf("%" wname "s", ""), 1, wname - vlen(nm)) \
-    "  " E "34m" pad(base(rrepo[n]), wrepo) R "  " prcolor(n) substr(sprintf("%" wpr "s", ""), 1, wpr - vlen(prplain(n))) \
-    "  " DIM rest R
+  return col[st] icon[st] R " " col[st] pad(st, 8) R " " GRAY g "/" R (st == "stopped" ? "" : BOLD) task R spaces(wname - vlen(nm)) \
+    "  " BLUE pad(base(rrepo[n]), wrepo) R "  " prcolor(n) spaces(wpr - vlen(prplain(n))) "  " GRAY ago(n) R
 }
 
-function out(   i, j, n, k, tmp, task) {
+function ago(n,   rest) { # "<age> · <why it waits>"
+  rest = age(rsince[n])
+  if (rst[n] == "waiting" && rnote[n] != "") rest = rest " · " ((rnote[n] in why) ? why[rnote[n]] : rnote[n])
+  if (rk[n] == "p") rest = rest (rest == "" ? "" : " · ") "started by hand"
+  return rest
+}
+
+# Tree view: a task (or session) under its group header.
+function display_tree(n, last,   st, nm, w, conn) {
+  conn = "  " GRAY (last ? "└─" : "├─") R " "
+  if (rk[n] == "s") {
+    w = rextra[n] (rextra[n] == "1" ? " window" : " windows")
+    return conn BLUE "▪" R " " BOLD pad(rname[n], wtask) R "  " GRAY pad(w, wrepo) R "  " GRAY tilde(rwt[n]) R
+  }
+  st = rst[n]
+  nm = substr(rname[n], index(rname[n], "/") + 1)
+  return conn col[st] icon[st] R " " (st == "stopped" ? GRAY : BOLD) pad(nm, wtask) R "  " BLUE pad(base(rrepo[n]), wrepo) R \
+    "  " prcolor(n) spaces(wpr - vlen(prplain(n))) "  " tail(n)
+}
+
+function header(g,   k, s, sum, nm, c) {
+  if (g == "*sessions") { nm = "sessions"; c = SESS } else { nm = g; c = GROUP }
+  sum = ""
+  for (k = 1; k <= 7; k++) { s = order[k]; if (gst[g, s] > 0) sum = sum " " col[s] icon[s] gst[g, s] R }
+  return c ((g in C) ? "▸" : "▾") " " nm R " " GRAY "(" gcount[g] ")" R sum
+}
+
+function line(n, disp) {
+  return rk[n] "\t" rid[n] "\t" rtg[n] "\t" disp "\t" rst[n] "\t" rsince[n] "\t" rnote[n] "\t" base(rrepo[n]) "\t" rbr[n] \
+    "\t" rwt[n] "\t" rprn[n] "\t" rprs[n] "\t" rprc[n] "\t" rpru[n] "\t" rtitle[n] "\t" rrepo[n] "\t" rgrp[n]
+}
+
+function put(s, file) { if (file == "") print s; else print s > file }
+
+function emit(view, file,   i, n, g, cur, last) {
+  cur = "\001"
+  for (i = 1; i <= nr; i++) {
+    n = idx[i]
+    if (view != "tree" || rk[n] == "h") { put(line(n, display(n)), file); continue }
+    g = rgrp[n]
+    if (g != cur) {
+      cur = g
+      put("g\tg:" g "\t" g "\t" header(g) "\t\t\t\t\t\t\t\t\t\t\t\t\t" g, file)
+    }
+    if (g in C) continue
+    last = (i == nr || rgrp[idx[i + 1]] != g)
+    put(line(n, display_tree(n, last)), file)
+  }
+}
+
+function out(   i, j, n, k, tmp, task, view, also) {
   for (i = 1; i <= nr; i++) { idx[i] = i; key[i] = sortkey(i) }
   for (i = 2; i <= nr; i++) {
     tmp = idx[i]; k = key[tmp]; j = i - 1
@@ -237,19 +303,21 @@ function out(   i, j, n, k, tmp, task) {
         base(rrepo[n]), rbr[n], rpane[n], rwin[n], rwt[n], (rpane[n] != "" ? "1" : "0"), rprn[n], rprs[n], rprc[n], rpru[n], rnote[n]
     }
   } else {
-    wname = wrepo = wpr = 0
+    wname = wtask = wrepo = wpr = 0
     for (i = 1; i <= nr; i++) {
-      if (rk[i] == "t" || rk[i] == "p" || rk[i] == "s" || rk[i] == "h") if (vlen(rname[i]) > wname) wname = vlen(rname[i])
+      if (vlen(rname[i]) > wname) wname = vlen(rname[i])
+      task = (rk[i] == "s") ? rname[i] : substr(rname[i], index(rname[i], "/") + 1)
+      if (rk[i] != "h" && vlen(task) > wtask) wtask = vlen(task)
       if (rk[i] == "t" || rk[i] == "p") {
         if (vlen(base(rrepo[i])) > wrepo) wrepo = vlen(base(rrepo[i]))
         if (vlen(prplain(i)) > wpr) wpr = vlen(prplain(i))
-      }
+        gcount[rgrp[i]]++; gst[rgrp[i], rst[i]]++
+      } else if (rk[i] == "s") gcount["*sessions"]++
     }
-    for (i = 1; i <= nr; i++) {
-      n = idx[i]
-      printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", rk[n], rid[n], rtg[n], display(n), rst[n], \
-        rsince[n], rnote[n], base(rrepo[n]), rbr[n], rwt[n], rprn[n], rprs[n], rprc[n], rpru[n], rtitle[n], rrepo[n]
-    }
+    view = (ENVIRON["AH_VIEW"] == "flat") ? "flat" : "tree"
+    emit(view, "")
+    also = ENVIRON["AH_ALSO"]
+    if (also != "") { emit(view == "tree" ? "flat" : "tree", also); close(also) }
   }
   if (stalef != "") {
     for (k in STALE) print k > stalef

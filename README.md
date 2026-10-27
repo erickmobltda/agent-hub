@@ -9,14 +9,17 @@ Run many Claude Code agents in parallel inside **your own tmux**, one git worktr
 Pure bash 3.2 plus tools you already have: tmux ≥ 3.3, fzf ≥ 0.73, git, jq, curl, Claude Code, and optionally gh. No binary, no daemon, no database.
 
 ```
-╭─ agent-hub ─────────────────────────────────────╮
-│ ⌂ idle     hub                                  │  ← popup only: the orchestrator
-│▌◐ waiting  dev/backend-api  svc-a  #42 ●  5m    │  ← waiting for you: first
-│ ✓ done     ops/infra        infra  #40 ✓  1h    │
-│ ● working  dev/docs         svc-c         2m    │
-│ ◌ stopped  bugs/transcript  api           2d    │  ← Enter resumes it
-│ ▪ session  0        1 window  ~/code/agent-hub  │  ← your other sessions
-╰─────────────────────────────────────────────────╯
+╭─ agent-hub ──────────────────────────────────────────────╮
+│ ⌂ hub                     orchestrator · idle            │  ← popup only
+│ ▾ dev (3) ◐1 ✓1 ●1                                       │  ← group: counts per state
+│   ├─ ◐ backend-api   svc-a   #42 ●    waiting 5m · Bash  │  ← needs you: first
+│   ├─ ✓ testing       svc-a            done 1h            │
+│   └─ ● docs          svc-a            working 2m         │
+│ ▸ ops (1) ○1                                             │  ← collapsed (Enter, ← →)
+│ ▾ sessions (2)                                           │  ← your other tmux sessions
+│   ├─ ▪ 0             1 window   ~/code/agent-hub         │
+│   └─ ▪ 2             1 window   ~/code/agent-hub         │
+╰──────────────────────────────────────────────────────────╯
   (preview on the right: repo, branch, PR, and the agent's screen)
 ```
 
@@ -61,8 +64,9 @@ Nothing else is changed: no other options, and no other keys. Agent windows only
 
 | Key | Action |
 |---|---|
-| type | filter by task, group, repo, state or PR |
-| Enter | open the agent (resumes Claude if it stopped) |
+| type | filter by task, group, repo, state or PR (the tree becomes a flat list, so tasks of collapsed groups are found too) |
+| Enter | open the agent (resumes Claude if it stopped); on a group: collapse or expand it |
+| ← / → | collapse / expand the group under the cursor |
 | Alt+Enter | open it zoomed (also in the Tab menu) |
 | Tab | menu with every action for the selected row |
 | Ctrl+N | new agent |
@@ -72,7 +76,7 @@ Nothing else is changed: no other options, and no other keys. Agent windows only
 | Ctrl+G | move it to another group |
 | Ctrl+R | refresh (automatic anyway) |
 
-The list puts first the agents that need you: waiting, then failed, then done but not looked at yet. Opening a `done` agent marks it seen (`idle`).
+Groups are tmux sessions; the groups with agents that need you come first, and inside a group: waiting, then failed, then done but not looked at yet. Collapsed groups are remembered (for the hub and the popup). Opening a `done` agent marks it seen (`idle`).
 
 **Ctrl+X / `agent-hub close`** shows what would be lost and lets you pick:
 - what it checks: uncommitted changes, commits not pushed, stash, and the PR state;

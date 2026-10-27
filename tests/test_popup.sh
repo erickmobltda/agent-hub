@@ -18,7 +18,7 @@ wait_for 5 popup_open
 sock=$(dash_sock popup)
 check "popup: Ctrl+Q opens the dashboard" [ -S "$sock" ]
 wait_for 3 sh -c "curl -s -m 1 --unix-socket '$sock' http://localhost | jq -e '.totalCount >= 2' >/dev/null"
-assert_contains "$(fzf_lines "$sock" | head -1)" "⌂ stopped  hub" "popup: the hub is the first row"
+assert_contains "$(fzf_lines "$sock" | head -1 | cut -f4 | sed 's/  */ /g')" "⌂ hub orchestrator · stopped" "popup: the hub is the first row"
 fzf_post "$sock" 'change-query(api)'
 wait_for 2 sh -c "curl -s -m 1 --unix-socket '$sock' http://localhost | jq -r .current.text | grep -q dev/api"
 fzf_post "$sock" 'trigger(enter)'

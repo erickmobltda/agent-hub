@@ -77,8 +77,8 @@ groups_list() { # groups that have tasks, then the other sessions (value<TAB>lab
 
 # --- flows run from the dashboard (fzf `execute`); they report in its footer (dash_msg) ---
 
-ui_new_agent() {
-  local f gf repo group prompt task cur hint out
+ui_new_agent() { # ui_new_agent [group to offer first]
+  local first=${1:-} f gf repo group prompt task cur hint out
   config_load || true
   if [ -z "$cfg_repos_roots" ] || [ -z "$cfg_worktree_location" ]; then
     dash_msg "✗ agent-hub is not set up yet: run 'agent-hub setup' in a terminal"
@@ -93,7 +93,8 @@ ui_new_agent() {
   if ! ui_pick repo "new agent · 1/4" "repository · type to filter" "" "$f"; then
     rm -f "$f" "$gf"; dash_msg "new agent cancelled"; return 0
   fi
-  groups_list > "$gf"
+  case "$first" in ''|'*sessions') groups_list ;; *) groups_list | awk -F'\t' -v g="$first" '
+    BEGIN { print g "\t" g } $1 != g' ;; esac > "$gf"
   hint="group (a tmux session) · pick one, or type a new name"
   while :; do
     ui_pick group "new agent · 2/4" "$hint" "new group" "$gf" || { rm -f "$f" "$gf"; dash_msg "new agent cancelled"; return 0; }
