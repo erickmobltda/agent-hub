@@ -327,6 +327,8 @@ cmd_open() {
   adopt_tasks
   task_resolve "$target"
   pane=$tk_pane
+  # An empty -t means "the current pane" to tmux: never respawn or switch without a real target.
+  [ -z "$tk_wid" ] || [ -n "$pane" ] || die "$EX_ERR" "no pane found in the window of $target"
   if [ -z "$tk_wid" ]; then
     [ -d "$tk_wt" ] || die "$EX_NOTFOUND" "worktree is gone: $tk_wt (close the task to clean up)"
     pane=$(task_launch "$tk_group" "$tk_task" "$tk_wt" resume) || exit
