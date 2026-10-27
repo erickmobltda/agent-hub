@@ -16,7 +16,7 @@ ids() { cut -f2 | tr '\n' ' ' | sed 's/ $//'; }
 # Rows: a tree of groups (the most urgent first), their tasks under them, sessions, then the
 # "+ new session" row. The popup shows the same rows; the flat view (search) the same items.
 assert_eq "g:dev t:dev/docs t:dev/api g:ops t:ops/infra g:*sessions s:scratch n:" "$(lines hq | ids)" "rows: tree order and ids"
-assert_eq "$(lines hq | ids)" "$(lines popup | ids)" "rows: the popup has the same rows (no hub row)"
+assert_eq "h: $(lines hq | ids)" "$(lines popup | ids)" "rows: the popup has the same rows, after a first one for the hub"
 assert_eq "+ new session  category → repo → name" "$(lines hq | tail -1 | cut -f4 | strip_ansi)" "rows: + new session last"
 assert_eq "▾ dev (2) ◐1 ●1" "$(lines hq | awk -F'\t' '$2 == "g:dev" { print $4 }' | strip_ansi)" "rows: group header with counts per state"
 assert_eq "  ├─ ◐ docs     svc-a    waiting 5m · Bash" "$(lines hq | awk -F'\t' '$2 == "t:dev/docs" { print $4 }' | strip_ansi | sed 's/  *$//')" "rows: task under its group: state, age, why it waits"

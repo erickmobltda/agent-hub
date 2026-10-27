@@ -12,7 +12,8 @@
 # Output, hq/popup (fzf shows field 4):
 #   kind id target display status since note repo branch worktree pr_num pr_state pr_checks pr_url title repo_path group
 #   kinds: g group header (tree only) · t task (live or stopped) · p Claude started by hand ·
-#          s plain session · n the "+ new session" row (last). The "sessions" group is *sessions.
+#          s plain session · n the "+ new session" row (last) · h the hub (popup only, first).
+#          The "sessions" group is *sessions.
 #   tree: headers with the group's tasks under them (├─ └─); flat: one line per item, group/task
 #   (the dashboard shows the flat view while a query is typed: fzf only searches what is shown).
 # Output, raw:
@@ -263,6 +264,7 @@ function line(n, disp) {
 function put(s, file) { if (file == "") print s; else print s > file }
 
 function emit(view, file,   i, n, g, cur, last) {
+  if (mode == "popup") put("h\th:\t-\t" GROUP "⌂" R " " BOLD "hub" R "  " GRAY "back to the full-screen dashboard" R "\t\t\t\t\t\t\t\t\t\t\t\t\t", file)
   cur = "\001"
   for (i = 1; i <= nr; i++) {
     n = idx[i]

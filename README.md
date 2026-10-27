@@ -3,7 +3,7 @@
 Run many Claude Code agents in parallel inside **your own tmux**, one git worktree and branch per task, and jump between them and your other sessions with **one key**.
 
 - **The hub** (`agent-hub`) is a full-screen dashboard: your categories and their agents as a tree on the left, a live preview on the right, and one-letter keys to create, open, rename, move and close them.
-- **Ctrl+Q** anywhere opens the same dashboard as a popup: what each agent is doing, how long it has been waiting, its PR and CI status. Enter jumps there.
+- **Ctrl+Q** anywhere opens the same dashboard as a popup: what each agent is doing, how long it has been waiting, its PR and CI status. Enter jumps there; **Ctrl+Q, Enter** takes you back to the hub.
 - **Tasks survive tmux restarts**, with or without tmux-resurrect: the hub repairs itself and Enter brings a stopped agent back with its conversation (`claude --continue`).
 
 Pure bash 3.2 plus tools you already have: tmux ≥ 3.3, fzf ≥ 0.73, git, jq, curl, Claude Code, and optionally gh. No binary, no daemon, no database.
@@ -58,7 +58,8 @@ Nothing else is changed: no other options, and no other keys. Agent windows only
 
 ## Using it
 
-- **`agent-hub`** opens the hub (creating or repairing it). **Ctrl+Q** opens the same dashboard as a popup from anywhere; `q`, Esc or Ctrl+Q closes it. In the hub, `q` takes you back to the session you came from.
+- **`agent-hub`** opens the hub (creating or repairing it). **Ctrl+Q** opens the same dashboard as a popup from anywhere; `q`, Esc or Ctrl+Q closes it. Its first row, `⌂ hub`, is where the cursor starts, so **Ctrl+Q, Enter** goes to the hub. In the hub, `q` takes you back to the session you came from.
+- **Layout:** the preview is on the right, and below the list when the terminal is narrower than about 100 columns.
 - **New session:** `n`, or Enter on `+ new session`. A small dialog asks three things:
   1. **category:** pick one, or type a new name;
   2. **repo:** type to filter. The repo of the selected task, or of your current directory, comes first;
@@ -170,7 +171,7 @@ Exit codes: `0` ok · `1` error/usage · `2` missing dependency · `3` needs con
 ## Troubleshooting
 
 - `agent-hub doctor` checks the dependencies and their versions, the hooks, the popup key, and whether tmux can find `claude`.
-- **The hub looks empty** after a reboot: run `agent-hub`, which rebuilds it. With tmux-resurrect it heals by itself after the restore.
+- **The hub looks empty** after a reboot: run `agent-hub`, or press Ctrl+Q, Enter. Both rebuild it. With tmux-resurrect it heals by itself after the restore.
 - **A hub from before v2.1** still has the orchestrator Claude below the dashboard. It is left alone, since it may hold a conversation you want. To rebuild the hub with the dashboard only: `tmux kill-session -t hq && agent-hub`.
 - **Ctrl+Q does nothing:** another program or key binding owns it. `agent-hub doctor` says which; pick another key with `agent-hub config set hub_key prefix:a`.
 - **An agent stays `starting`:** Claude is probably asking whether to trust the folder. Open it and answer.

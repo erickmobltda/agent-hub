@@ -338,7 +338,7 @@ Decisões (perguntadas ao usuário e aprovadas):
 3. **Nova sessão em 3 passos, sem prompt:** categoria (existente ou nova) → repo (filtra ao digitar) → nome (ticket do Jira ou texto livre, transformado num nome válido mantendo maiúsculas: `PROJ-1234 fix login` → `PROJ-1234-fix-login`). Ao criar, a task abre e o usuário fala direto com o Claude.
 
 Mudanças técnicas:
-- **Layout:** `--no-input`, lista com borda superior `SESSIONS`, preview à direita (62%; embaixo quando o pane tem menos de 100 colunas). O título `PREVIEW` é a primeira linha do próprio preview, porque uma borda só à esquerda não tem linha para um label do fzf.
+- **Layout:** `--no-input`, lista com borda superior `SESSIONS`, preview à direita (55%). Ele vai para baixo quando o terminal tem menos de ~100 colunas (`<55(...)`), porque o limiar do fzf mede a largura do próprio preview, não a do terminal. O título `PREVIEW` é a primeira linha do próprio preview, porque uma borda só à esquerda não tem linha para um label do fzf.
 - **Cabeçalho e rodapé:** o cabeçalho tem os agentes por estado (arquivo `.summary` escrito pelo `rows.awk`) e a mensagem da última ação. O rodapé mostra as teclas da linha selecionada; ele troca no evento `focus`, sem iniciar o agent-hub.
 - **Busca:** `/` faz `show-input` e `unbind` das letras, e digitar troca para a lista plana. Esc faz `clear-query+rebind(...)`, e o `hide-input` vem depois, num `bg-transform`: o fzf desfaz uma mudança da query feita na mesma cadeia de ações de um `hide-input`.
 - **Diálogos:**
@@ -355,4 +355,5 @@ Mudanças técnicas:
   - uma categoria com tasks não é apagada: ela some com a última task.
 - **Lista de repos:** só entram diretórios com uma pasta `.git`. Os worktrees das tasks, cujo `.git` é um arquivo, não aparecem mais como repos.
 - **`agent-hub new` num terminal** imprime as mensagens (cancelado, criado, erro), em vez de gravá-las para um dashboard que não existe.
+- **Popup:** a primeira linha, `⌂ hub`, leva ao hub, que é criado ou consertado se preciso. O cursor começa nela, então Ctrl+Q, Enter volta ao hub de qualquer lugar.
 - **Hub antigo com orquestrador:** o pane do orquestrador é mantido, porque pode ter uma conversa em uso. `tmux kill-session -t hq && agent-hub` recria o hub só com o dashboard.

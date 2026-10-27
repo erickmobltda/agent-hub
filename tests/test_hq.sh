@@ -17,6 +17,19 @@ check "hq: no Claude runs in the hub" [ ! -s "$CLAUDE_STUB_LOG" ]
 "$AH" hq >/dev/null 2>&1
 assert_eq "1" "$(tm list-panes -s -t =hub | wc -l | tr -d ' ')" "hq: idempotent"
 
+# Layout: the preview on the right (its title on the first line) down to ~100 columns, below it
+# on narrower panes. fzf's threshold measures the preview, so both sides are checked.
+top_line_has_preview() { tmux -L "$AGENT_HUB_TMUX_SOCKET" capture-pane -p -t "$(role_pane dashboard)" | head -1 | grep -q PREVIEW; }
+hub_win=$(tm display -p -t "$(role_pane dashboard)" '#{window_id}')
+for cols in 140 104; do
+  tm resize-window -t "$hub_win" -x "$cols" -y 40
+  wait_for 3 top_line_has_preview
+  check "layout: preview on the right at $cols columns" top_line_has_preview
+done
+tm resize-window -t "$hub_win" -x 90 -y 40
+wait_for 3 sh -c "! tmux -L $AGENT_HUB_TMUX_SOCKET capture-pane -p -t $(role_pane dashboard) | head -1 | grep -q PREVIEW"
+check "layout: preview below the list at 90 columns" sh -c "! tmux -L $AGENT_HUB_TMUX_SOCKET capture-pane -p -t $(role_pane dashboard) | head -1 | grep -q PREVIEW && tmux -L $AGENT_HUB_TMUX_SOCKET capture-pane -p -t $(role_pane dashboard) | grep -q PREVIEW"
+
 # The hub pane survives Ctrl-C and even fzf dying.
 dash=$(role_pane dashboard)
 sock=$(dash_sock hq)

@@ -177,8 +177,10 @@ $global"
 $global"
   AH_KEYS_N="$(dash_keys ⏎ 'new session' j/k move)
 $global"
+  AH_KEYS_H="$(dash_keys ⏎ 'go to the hub' j/k move)
+$global"
   AH_KEYS_SEARCH="$(dash_keys ⏎ open esc 'back to the tree')"
-  export AH_KEYS_T AH_KEYS_G AH_KEYS_S AH_KEYS_N AH_KEYS_SEARCH
+  export AH_KEYS_T AH_KEYS_G AH_KEYS_S AH_KEYS_N AH_KEYS_H AH_KEYS_SEARCH
   esc="if [ \"\$FZF_INPUT_STATE\" != hidden ]; then echo '$DASH_SEARCH_OFF'"
   if [ "$mode" = popup ]; then
     esc="$esc; else echo abort; fi"; ctrlc='ctrl-c:abort'
@@ -201,11 +203,11 @@ $global"
     --color='list-label:magenta:bold,preview-label:magenta:bold,hl:yellow:bold,hl+:yellow:bold,gutter:-1' \
     --color='scrollbar:dim,preview-border:dim' \
     --preview='"$AGENT_HUB_BIN" dash --preview {1} {2} {3} {5} {6} {7} {8} {9} {10} {11} {12} {13} {14} {15}' \
-    --preview-window='right,62%,border-left,<100(down,55%,border-top)' \
+    --preview-window='right,55%,border-left,<55(down,55%,border-top)' \
     --bind='ctrl-r:bg-transform:"$AGENT_HUB_BIN" dash --refresh' \
     --bind='every(5):bg-transform:[ "${FZF_IDLE_TIME:-0}" -ge 2 ] && "$AGENT_HUB_BIN" dash --refresh' \
     --bind='load:untrack-current+transform-header:cat "$AGENT_HUB_DASH_ROWS.header" 2>/dev/null' \
-    --bind='focus:transform-footer:if [ "$FZF_INPUT_STATE" != hidden ]; then printf %s "$AH_KEYS_SEARCH"; else case {1} in t|p) printf %s "$AH_KEYS_T" ;; g) printf %s "$AH_KEYS_G" ;; s) printf %s "$AH_KEYS_S" ;; *) printf %s "$AH_KEYS_N" ;; esac; fi' \
+    --bind='focus:transform-footer:if [ "$FZF_INPUT_STATE" != hidden ]; then printf %s "$AH_KEYS_SEARCH"; else case {1} in t|p) printf %s "$AH_KEYS_T" ;; g) printf %s "$AH_KEYS_G" ;; s) printf %s "$AH_KEYS_S" ;; h) printf %s "$AH_KEYS_H" ;; *) printf %s "$AH_KEYS_N" ;; esac; fi' \
     --bind='change:transform:v=tree; [ -n {q} ] && v=flat; f=$AGENT_HUB_DASH_ROWS; if [ "$(cat "$f.view")" != "$v" ]; then echo "$v" > "$f.view"; echo "reload-sync(cat \"$f.$v\")+first"; else echo first; fi' \
     --bind="/:show-input+unbind($DASH_LETTERS)+transform-footer:printf %s \"\$AH_KEYS_SEARCH\"" \
     --bind="esc:transform:$esc" --bind="$ctrlc" \
@@ -318,6 +320,11 @@ dash_preview() {
         printf "\n${D}⏎ fold · n new session here · r rename · d delete (once it has no tasks)${R}\n"
       fi
       return ;;
+    h)
+      printf "\033[1;35m⌂ hub${R}  ${D}the %s session${R}\n\n" "$cfg_hq_session"
+      printf "This dashboard in full screen: categories and agents on the left, the preview on the right.\n\n"
+      printf "${D}⏎ goes there; it is created or repaired if needed. From anywhere: Ctrl+Q, ⏎${R}\n"
+      return ;;
     n)
       printf "\033[1;35m+ new session${R}\n\n"
       printf "Opens a small dialog:\n\n  ${B}1${R} category  ${D}an existing one, or type a new one${R}\n"
@@ -393,6 +400,7 @@ dash_open() { # dash_open <kind> <id> <target> <zoom>
     n) if [ "${FZF_INPUT_STATE:-hidden}" != hidden ]; then echo "$DASH_SEARCH_OFF+trigger(n)"
        else echo 'trigger(n)'; fi
        return ;;
+    h) ensure_hq >/dev/null 2>&1; err=$(t switch-client -t "=$cfg_hq_session:" 2>&1) ;;
     s) err=$(t switch-client -t "=$target:" 2>&1) ;;
     p) err=$(pane_switch "$target" "$zoom" 2>&1) ;;
     t) if [ "$zoom" = 1 ]; then err=$(cmd_open "${id#t:}" --zoom 2>&1 >/dev/null)
