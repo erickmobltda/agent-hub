@@ -32,11 +32,13 @@ Plan: ~/.claude/plans/quero-que-vc-revise-tidy-lobster.md · branch `feat/hub-v2
 
 ## v2.1: agent-deck-style hub (plan: same file, approved 2026-10-26)
 
-- [x] rows.awk: no hub row, `+ new session` row, header summary
+- [x] rows.awk: `+ new session` row, header summary; in the popup a first `⌂ hub` row (Ctrl+Q, Enter goes to the hub)
 - [x] agents.sh: `rename` (group/task), delete a plain session; repo list without task worktrees
 - [x] ui.sh: wizard category → repo → name (namify + live preview), rename/delete flows
 - [x] dash.sh: split layout + labels, letter keys, `/` search + Esc, context footer, header summary, q, help; borderless dialogs sized to the client
 - [x] hq.sh/run.sh: hub without orchestrator
-- [x] tests (dash, popup, hq, wizard, agents, gh): 363 checks pass + docs (README, SKILL, SPEC §18)
+- [x] preview on the right down to ~100 columns (fzf's `<N(...)` threshold measures the preview, not the terminal)
+- [x] tests (dash, popup, hq, wizard, agents, gh): 370 checks pass + docs (README, SKILL, SPEC §18)
 - [x] merge to main (local fast-forward)
-- [ ] user rebuilds the hub (`tmux kill-session -t hq && agent-hub`)
+- [x] user's hub is dashboard-only
+- [ ] publish: public repo erickmobltda/agent-hub, `main` = v1 baseline (9f53ffc), PR from `feat/hub-v2`
