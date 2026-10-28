@@ -10,13 +10,13 @@ Pure bash 3.2 plus tools you already have: tmux ≥ 3.3, fzf ≥ 0.73, git, jq, 
 
 ```
  agent-hub   ◐ 1 waiting   ✓ 1 done   ● 1 working          │ ─ PREVIEW ─────────────────────────────
-─ SESSIONS ────────────────────────────────────────────────│ dev/backend-api  waiting 5m · Bash
-▌ ▾ dev (3) ◐1 ✓1 ●1                                       │ svc-a · feat/backend-api · PR #42 open
-    ├─ ◐ backend-api  svc-a  #42 ✓  waiting 5m · Bash      │ ~/code/svc-a--backend-api
-    ├─ ✓ frontend     svc-a         done 1h                │ ───────────────────────────────────────
-    └─ ● docs         svc-a         working 2m             │ (the agent's live screen)
-  ▸ ops (1) ○1                                             │
-  ▾ sessions (2)                                           │
+─ SESSIONS ────────────────────────────────────────────────│ dev/backend-api  ◐ waiting 5m · Bash
+▌ ▾ 📁 dev (3) ◐1 ✓1 ●1                                   │ 📦 svc-a   🌿 feat/backend-api
+    ├─ ◐ backend-api  svc-a  #42 ✓  waiting 5m · Bash      │ 🔀 #42 open   ✅ checks pass
+    ├─ ✓ frontend     svc-a         done 1h                │ 📂 ~/code/svc-a--backend-api
+    └─ ● docs         svc-a         working 2m             │ ───────────────────────────────────────
+  ▸ 📁 ops (1) ○1                                         │ (the agent's live screen)
+  ▾ 💻 sessions (2)                                       │
     ├─ ▪ 0            1 window   ~/code/agent-hub          │
     └─ ▪ notes        2 windows  ~/notes                   │
   + new session  category → repo → name                    │
@@ -27,7 +27,7 @@ Pure bash 3.2 plus tools you already have: tmux ≥ 3.3, fzf ≥ 0.73, git, jq, 
 
 - **Header:** the agents per state, then the result of the last action.
 - **Left:** each category (a tmux session) with its tasks; the ones that need you come first. `▸` is folded. Your other tmux sessions are under `sessions`.
-- **Right:** a task's repo, branch, PR and worktree, and the agent's screen; for a category, its agents.
+- **Right:** for a task, its repo, branch, PR and checks, worktree, and the agent's screen; for a category, its agents. The icons are emoji by default; `agent-hub config set icons nerd` uses Nerd Font glyphs instead (your terminal needs a Nerd Font), and `off` removes them.
 - **Footer:** the keys of the selected row.
 
 ## Install
@@ -128,6 +128,7 @@ They come from Claude Code hooks; the hook takes about 20 ms, prints nothing and
 | `claude_pane_pct` | `70` | height of the Claude pane; a shell pane in the worktree takes the rest |
 | `hub_key` | `C-q` | the popup key: `C-q`, `prefix:<key>` (after your prefix) or `off` |
 | `status_bar` | `on` | agent counts in `status-right` |
+| `icons` | `emoji` | icons in the preview and on category headers: `emoji`, `nerd` (needs a Nerd Font in the terminal) or `off` |
 | `github` | `auto` | PR status through `gh` when it is logged in; `off` to never call it |
 | `hq_session` | `hq` | name of the hub session |
 

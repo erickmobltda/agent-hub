@@ -8,7 +8,8 @@
 #   AH_GHDIR (cache dir), AH_STALE (file that receives repos whose cache is old), AH_TTL (seconds),
 #   AH_VIEW (tree | flat: what goes to stdout), AH_ALSO (file that receives the other view),
 #   AH_COLLAPSED (file listing collapsed groups; their tasks are left out of the tree),
-#   AH_SUMMARY (file that receives the header line: agents per state).
+#   AH_SUMMARY (file that receives the header line: agents per state),
+#   AH_ICON_GROUP / AH_ICON_SESSIONS (icon and space before a category / "sessions" header, or empty).
 # Output, hq/popup (fzf shows field 4):
 #   kind id target display status since note repo branch worktree pr_num pr_state pr_checks pr_url title repo_path group
 #   kinds: g group header (tree only) · t task (live or stopped) · p Claude started by hand ·
@@ -250,7 +251,7 @@ function display_tree(n, last,   st, nm, w, conn) {
 }
 
 function header(g,   k, s, sum, nm, c) {
-  if (g == "*sessions") { nm = "sessions"; c = SESS } else { nm = g; c = GROUP }
+  if (g == "*sessions") { nm = ENVIRON["AH_ICON_SESSIONS"] "sessions"; c = SESS } else { nm = ENVIRON["AH_ICON_GROUP"] g; c = GROUP }
   sum = ""
   for (k = 1; k <= 7; k++) { s = order[k]; if (gst[g, s] > 0) sum = sum " " col[s] icon[s] gst[g, s] R }
   return c ((g in C) ? "▸" : "▾") " " nm R " " GRAY "(" gcount[g] ")" R sum

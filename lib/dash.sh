@@ -317,19 +317,19 @@ dash_preview() {
   case "$kind" in
     g)
       if [ "$target" = "*sessions" ]; then
-        printf "\033[1;34m▪ sessions${R}\n${D}your tmux sessions without agents${R}\n\n"
+        printf "\033[1;34m%ssessions${R}\n${D}your tmux sessions without agents${R}\n\n" "$(icon sessions)"
         t list-sessions -F '#{session_name}'"$TAB"'#{session_windows}'"$TAB"'#{?session_attached,attached,}' 2>/dev/null |
           awk -F'\t' -v hq="$cfg_hq_session" '$1 != hq { printf "  \033[34m▪\033[0m \033[1m%-16s\033[0m \033[2m%s window%s %s\033[0m\n", $1, $2, ($2 == 1 ? "" : "s"), $3 }'
         printf "\n${D}⏎ fold · on a session: ⏎ switch · d delete${R}\n"
       else
-        rows raw | awk -F'\t' -v g="$target" '
+        rows raw | awk -F'\t' -v g="$target" -v ic="$(icon category)" '
           BEGIN { E = "\033["; R = E "0m"; split("waiting error done starting working idle stopped", o, " ")
             c["waiting"] = E "1;33m"; c["error"] = E "1;31m"; c["done"] = E "1;36m"; c["starting"] = E "32m"
             c["working"] = E "1;32m"; c["idle"] = E "37m"; c["stopped"] = E "90m"
             i["waiting"] = "◐"; i["error"] = "✗"; i["done"] = "✓"; i["starting"] = "⟳"; i["working"] = "●"; i["idle"] = "○"; i["stopped"] = "◌" }
           $2 == g { n++; k[$4]++; line[n] = sprintf("  %s%s%s %s%-24s%s %s%-14s%s %s%s%s", c[$4], i[$4], R, E "1m", $3, R, E "34m", $6, R, c[$4], $4, R) }
           END {
-            printf "%s📁 %s%s\n", E "1;35m", g, R
+            printf "%s%s%s%s\n", E "1;35m", ic, g, R
             s = n " agent" (n == 1 ? "" : "s")
             for (x = 1; x <= 7; x++) if (k[o[x]]) s = s " · " c[o[x]] i[o[x]] " " k[o[x]] " " o[x] R
             printf "%s\n\n%s── agents ──%s\n", s, E "2m", R
@@ -358,19 +358,27 @@ dash_preview() {
     permission_prompt) note=permission ;; elicitation_dialog|agent_needs_input) note=input ;;
     AskUserQuestion) note=question ;; ExitPlanMode) note="plan approval" ;;
   esac
-  if [ -n "$prn" ]; then
-    pr="PR #$prn $(printf '%s' "$prs" | tr '[:upper:]' '[:lower:]')"
-    case "$prc" in pass) pr="$pr · checks ✓" ;; fail) pr="$pr · checks ✗" ;; pending) pr="$pr · checks running" ;; esac
-  fi
-  local SC
+  local SC SI PC used=4 # lines above the screen: name, repo and branch, worktree, separator
   case "$st" in
-    waiting) SC='\033[1;33m' ;; error) SC='\033[1;31m' ;; done) SC='\033[1;36m' ;;
-    working|starting) SC='\033[1;32m' ;; *) SC='\033[90m' ;;
+    waiting) SC='\033[1;33m'; SI='◐' ;; error) SC='\033[1;31m'; SI='✗' ;; done) SC='\033[1;36m'; SI='✓' ;;
+    working) SC='\033[1;32m'; SI='●' ;; starting) SC='\033[1;32m'; SI='⟳' ;; idle) SC='\033[90m'; SI='○' ;;
+    *) SC='\033[90m'; SI='◌' ;;
   esac
-  printf "\033[1;35m%s${R}  ${SC}%s${R} ${D}%s%s${R}\n" "${id#?:}" "$st" "$(elapsed "$since")" "${note:+ · waiting for $note}"
-  printf "\033[34m%s${R} ${D}·${R} \033[35m%s${R}%s\n" "$repo" "${br:-?}" "${pr:+  ·  $pr}"
-  printf "${D}%s${R}\n" "${wt/#$HOME/$tilde}"
-  [ -n "$title" ] && [ "$st" != stopped ] && printf "${D}“%s”${R}\n" "$title"
+  printf "\033[1;35m%s${R}  ${SC}%s %s${R} ${D}%s%s${R}\n" "${id#?:}" "$SI" "$st" "$(elapsed "$since")" "${note:+ · $note}"
+  printf "\033[34m%s%s${R}   \033[35m%s%s${R}\n" "$(icon repo)" "$repo" "$(icon branch)" "${br:-?}"
+  if [ -n "$prn" ]; then
+    case "$prs" in OPEN) PC='\033[32m' ;; MERGED) PC='\033[35m' ;; CLOSED) PC='\033[31m' ;; *) PC='\033[90m' ;; esac
+    pr=$(icon pr); [ -n "$pr" ] || pr='PR '
+    printf "${PC}%s#%s %s${R}" "$pr" "$prn" "$(printf '%s' "$prs" | tr '[:upper:]' '[:lower:]')"
+    case "$prc" in
+      pass) printf "   \033[32m%schecks pass${R}" "$(icon pass)" ;;
+      fail) printf "   \033[31m%schecks failing${R}" "$(icon fail)" ;;
+      pending) printf "   \033[33m%schecks running${R}" "$(icon pending)" ;;
+    esac
+    printf '\n'; used=$((used + 1))
+  fi
+  printf "${D}%s%s${R}\n" "$(icon worktree)" "${wt/#$HOME/$tilde}"
+  if [ -n "$title" ] && [ "$st" != stopped ]; then printf "${D}%s“%s”${R}\n" "$(icon title)" "$title"; used=$((used + 1)); fi
   printf "${D}%s${R}\n" '──────────────────────────────'
   if [ "$target" = - ] || [ -z "$target" ] || [ "$st" = stopped ]; then
     printf 'Claude is not running. Enter starts it again with the last conversation (claude --continue).\n\n'
@@ -379,7 +387,7 @@ dash_preview() {
       git -C "$wt" status --short 2>/dev/null | head -n 10
     fi
   else
-    dash_capture "$target" $((lines - 6))
+    dash_capture "$target" $((lines - used))
   fi
 }
 

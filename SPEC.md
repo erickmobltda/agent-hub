@@ -356,5 +356,6 @@ Mudanças técnicas:
 - **Lista de repos:** só entram diretórios com uma pasta `.git`. Os worktrees das tasks, cujo `.git` é um arquivo, não aparecem mais como repos.
 - **`agent-hub new` num terminal** imprime as mensagens (cancelado, criado, erro), em vez de gravá-las para um dashboard que não existe.
 - **`v` alterna o preview** entre à direita e embaixo da lista, via `change-preview-window`. A escolha vale para todos os dashboards e é lembrada em `<runtime>/layout`, como as categorias recolhidas, então o hub a mantém quando reinicia. À direita, o fallback para embaixo em panes estreitos continua.
+- **Ícones** (`icons = emoji | nerd | off`, padrão `emoji`): no preview de uma task (repo, branch, PR e checks, worktree, título) e no cabeçalho das categorias. `nerd` usa glifos de Nerd Font, que precisam de uma Nerd Font no terminal (o Ghostty já traz os símbolos). As linhas das tasks continuam sem ícones, para manter as colunas alinhadas.
 - **Popup:** a primeira linha, `⌂ hub`, leva ao hub, que é criado ou consertado se preciso. O cursor começa nela, então Ctrl+Q, Enter volta ao hub de qualquer lugar.
 - **Hub antigo com orquestrador:** o pane do orquestrador é mantido, porque pode ter uma conversa em uso. `tmux kill-session -t hq && agent-hub` recria o hub só com o dashboard.
