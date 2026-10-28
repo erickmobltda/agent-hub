@@ -1,5 +1,5 @@
 #!/bin/bash
-# agent-hub — Claude Code agent hub on tmux. Single entrypoint.
+# agent-hub — Claude Code agents on tmux + git worktrees. Single entrypoint.
 set -u
 
 src=$0
@@ -11,40 +11,55 @@ done
 AGENT_HUB_HOME=$(cd -P "$(dirname "$src")/.." && pwd)
 export AGENT_HUB_HOME
 
-for f in common doctor config agents dash hq; do
-  [ -f "$AGENT_HUB_HOME/lib/$f.sh" ] && . "$AGENT_HUB_HOME/lib/$f.sh"
+for f in common install config doctor agents ui run dash hq tmux gh; do
+  . "$AGENT_HUB_HOME/lib/$f.sh"
 done
 
 usage() {
   cat <<'EOF'
-usage: agent-hub <command> [args]
-  doctor                                   check dependencies
-  setup [--repos-roots P] [--branch-prefix B] [--worktree-location L]
-  config get <key> | set <key> <value> | show
-  new --group G --repo R --task T [--prompt P]
-  list [--format tsv|json]
+usage: agent-hub [command]
+  (no command)                       open the hub (creates or repairs it); same as: agent-hub hq
+  new                                new session, step by step: category, repo, name
+  new --group G --repo R --task T [--prompt P] [--open]
+  open G/T [--zoom] [--no-switch]    go to a task; starts Claude again if it stopped
+  send G/T <message> [--force]       type a message into the agent and press Enter
+  peek G/T [-n lines]                print the agent's screen
+  list [--format tsv|json]           tasks and agents with their state
   close G/T [--yes] [--delete-branch] [--force-delete-branch]
-  move G/T --to G2
-  dash                                     fzf dashboard
-  hq                                       create/attach the hub session
-  status-bar                               status-right segment
+  move G/T --to G2                   move a task to another category
+  rename G NEW | rename G/T NEW      rename a category, or a task (its branch keeps its name)
+  dash [--popup|--hq]                the dashboard (Ctrl+Q opens it as a popup)
+  config show | get K | set K V | edit
+  setup [--repos-roots P] [--branch-prefix B] [--worktree-location L]
+  doctor [--deps]
+internal: run, heal, tmux-init, tmux-uninit, status-bar, hook, _gh-refresh, _name-preview
 EOF
 }
 
 cmd=${1:-}
 [ $# -gt 0 ] && shift
 case "$cmd" in
-  doctor) cmd_doctor "$@" ;;
-  setup) cmd_setup "$@" ;;
-  config) cmd_config "$@" ;;
+  ''|hq) cmd_hub ;;
   new) cmd_new "$@" ;;
+  open) cmd_open "$@" ;;
+  send) cmd_send "$@" ;;
+  peek) cmd_peek "$@" ;;
   list) cmd_list "$@" ;;
   close) cmd_close "$@" ;;
   move) cmd_move "$@" ;;
+  rename) cmd_rename "$@" ;;
   dash) cmd_dash "$@" ;;
-  hq) cmd_hq "$@" ;;
-  status-bar) cmd_status_bar "$@" ;;
+  config) cmd_config "$@" ;;
+  setup) cmd_setup "$@" ;;
+  doctor) cmd_doctor "$@" ;;
+  run) cmd_run "$@" ;;
+  heal) cmd_heal ;;
+  tmux-init) cmd_tmux_init ;;
+  tmux-uninit) cmd_tmux_uninit ;;
+  status-bar) cmd_status_bar ;;
   hook) exec /bin/bash "$AGENT_HUB_HOME/hooks/status-hook.sh" "$@" ;;
+  _gh-refresh) cmd_gh_refresh "$@" ;;
+  _name-preview) config_load; name_preview "${1:-}" "${2:-}" "${3:-}" ;;
   -h|--help|help) usage ;;
   *) usage >&2; exit "$EX_ERR" ;;
 esac

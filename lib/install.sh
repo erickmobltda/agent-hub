@@ -1,15 +1,18 @@
 # shellcheck shell=bash
-# Helpers shared by install.sh / uninstall.sh (SPEC §12).
+# Helpers shared by install.sh / uninstall.sh.
 
 MARK_BEGIN="# >>> agent-hub >>>"
 MARK_END="# <<< agent-hub <<<"
 HOOK_MARK="# agent-hub"
-HOOK_EVENTS="UserPromptSubmit PreToolUse PostToolUse PermissionRequest Notification Stop StopFailure SessionEnd"
+HOOK_EVENTS="SessionStart UserPromptSubmit PreToolUse PostToolUse PermissionRequest Notification Stop StopFailure SessionEnd"
 
 claude_settings() { printf '%s\n' "${AGENT_HUB_CLAUDE_SETTINGS:-$HOME/.claude/settings.json}"; }
 tmux_conf() { printf '%s\n' "${AGENT_HUB_TMUX_CONF:-$HOME/.tmux.conf}"; }
 bin_dir() { printf '%s\n' "${AGENT_HUB_BIN_DIR:-$HOME/.local/bin}"; }
 skills_dir() { printf '%s\n' "${AGENT_HUB_SKILLS_DIR:-$HOME/.claude/skills}"; }
+
+# `|| true`: a broken hook must never exit 2, which on PreToolUse would block the tool.
+hook_command() { printf '/bin/bash %s || true %s\n' "$(printf '%q' "$1/hooks/status-hook.sh")" "$HOOK_MARK"; }
 
 # settings_strip < json : removes every hook entry carrying our marker.
 JQ_STRIP='
@@ -20,33 +23,45 @@ JQ_STRIP='
 settings_strip() { jq --arg mark "$HOOK_MARK" "$JQ_STRIP"; }
 
 # settings_merge <hook_command> < json : idempotent (strip, then add ours).
+# PreToolUse only matters for the tools that wait for the user; the rest are covered by PostToolUse.
 settings_merge() {
   jq --arg mark "$HOOK_MARK" --arg cmd "$1" --arg events "$HOOK_EVENTS" "$JQ_STRIP"' |
     .hooks = (.hooks // {}) |
     reduce ($events | split(" ")[]) as $e (.;
       .hooks[$e] = ((.hooks[$e] // []) + [
-        (if $e == "Notification" then {matcher: "permission_prompt|elicitation_dialog|agent_needs_input"} else {} end)
+        (if $e == "Notification" then {matcher: "permission_prompt|elicitation_dialog|agent_needs_input"}
+         elif $e == "PreToolUse" then {matcher: "AskUserQuestion|ExitPlanMode"}
+         else {} end)
         + {hooks: [{type: "command", command: $cmd, timeout: 5}]}
       ]))'
 }
 
-tmux_block_strip() { # stdin -> stdout without our block
-  awk -v b="$MARK_BEGIN" -v e="$MARK_END" '$0 == b { skip = 1; next } $0 == e { skip = 0; next } !skip'
+tmux_block_strip() { # stdin -> stdout without our block (v1 or v2) and the blank line before it
+  awk -v b="$MARK_BEGIN" -v e="$MARK_END" '
+    $0 == b { skip = 1; blank = 0; next }
+    $0 == e { skip = 0; next }
+    skip { next }
+    /^[[:space:]]*$/ { if (blank) print ""; blank = 1; next }
+    { if (blank) print ""; blank = 0; print }
+    END { if (blank && !skip) print "" }'
 }
 
-# tmux_block_insert <blockfile> : stdin -> stdout, block placed before the tpm `run` line
-# (and before the comment lines right above it), or appended.
-tmux_block_insert() {
-  awk -v f="$1" '
-    { line[NR] = $0 }
-    !at && /^[[:space:]]*run(-shell)?[[:space:]].*tpm/ { at = NR }
+# tmux_block_append <repo> : stdin -> stdout with our block at the very end, after tpm, so
+# themes and tmux-continuum have already set status-right when agent-hub.tmux runs.
+tmux_block_append() {
+  local line
+  # run-shell expands formats, so a '#' in the path must be doubled.
+  line="run-shell '$(printf '%s' "$1/agent-hub.tmux" | sed 's/#/##/g')'"
+  awk -v b="$MARK_BEGIN" -v e="$MARK_END" -v l="$line" '
+    { lines[NR] = $0 }
     END {
-      if (at) while (at > 1 && line[at - 1] ~ /^[[:space:]]*#/) at--
-      else at = NR + 1
-      for (i = 1; i <= NR + 1; i++) {
-        if (i == at) { while ((getline l < f) > 0) print l; close(f) }
-        if (i <= NR) print line[i]
-      }
+      n = NR; while (n > 0 && lines[n] ~ /^[[:space:]]*$/) n--
+      for (i = 1; i <= n; i++) print lines[i]
+      if (n > 0) print ""
+      print b
+      print "# Managed by agent-hub (install.sh adds it, uninstall.sh removes it): popup key + status segment."
+      print l
+      print e
     }'
 }
 

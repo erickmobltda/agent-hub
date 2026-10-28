@@ -27,6 +27,7 @@ Inspiração: [agent-deck](https://github.com/asheshgoplani/agent-deck). Não é
    - **grupo (epic) = session do tmux**
    - **agente = window do tmux**, dentro da session do grupo
    - metadados derivados (diretório do pane + git) ou guardados em **user options** do tmux (`@...`)
+   - **v2 (§17):** exceção aprovada — um arquivo `agent-hub` no git dir privado de cada worktree guarda grupo/task, para as tasks sobreviverem a um restart do tmux. Ele some junto com o worktree.
 2. **Só recursos oficiais e documentados** do Claude Code (hooks, skills, CLI), do tmux e do fzf. Antes de usar qualquer recurso, **verifique na documentação oficial** da versão instalada:
    - Claude Code: https://code.claude.com/docs
    - tmux: `man tmux`
@@ -298,3 +299,61 @@ Saídas pensadas para o Claude: códigos de saída consistentes e mensagens de e
 3. Layout do `hq`: como no §9.
 4. Sugestão de fechar a task ao terminar: fora do MVP.
 5. Refresh: híbrido. O hook empurra `reload` via `fzf --listen=<socket Unix>` + `curl --unix-socket`, e há um loop de 2s (só enquanto o dash está aberto) que faz `reload+refresh-preview`.
+
+## 17. v2 (decisões de 2026-10-26)
+
+Motivo: o `agent-hub hq` abria o tmux vazio. O tmux-continuum restaurava a session `hq` como dois zsh comuns (o resurrect não guarda user options nem os processos), e o `hq` só montava o layout quando a session não existia. O mesmo restore escondia os agentes do dashboard e quebrava o Ctrl+Q nessas sessions.
+
+Decisões (perguntadas ao usuário e aprovadas):
+1. **Uma tecla só no tmux: Ctrl+Q** (root table, configurável em `hub_key`) abre um **popup** com todos os agentes e as sessions comuns; Ctrl+Q de novo fecha. Substitui o §9.2 e a decisão 2 do §16.
+2. **Dashboard:** digitar filtra, Enter abre, Tab abre um menu de ações, e Ctrl+letra são atalhos (n novo, s enviar, x fechar, o PR, g mover, z zoom, r atualizar). Linhas planas `grupo/task`, sem cabeçalho de grupo. É o mesmo dashboard no hub e no popup. Enter num agente parado o retoma (`claude --continue`).
+3. **GitHub (gh):** número, estado e CI do PR por agente, e abrir o PR no browser. Um cache local é atualizado em background no máximo 1x/min por repo; `github=auto|off`. Isso amplia a regra de rede do §3.3.
+4. **Persistência:** marcador `<repo>/.git/worktrees/<id>/agent-hub` (`group=`, `task=`, `worktree=`), escrito no `new`, atualizado no `move` e apagado pelo próprio git com o worktree. Worktrees da v1 no caminho padrão do agent-hub são adotadas: o grupo é a session da window restaurada, ou o nome do repo.
+5. **Escopo:** agentes Claude e sessions tmux comuns. Outros CLIs de IA ficam fora; o comando do agente é configurável (`agent_cmd`).
+
+Mudanças técnicas:
+- **O hub se conserta sozinho.** Os panes são identificados por `@agent_hub_role`. Se faltarem os dois, uma nova window `hub` substitui as windows que só têm shells parados; a session e o cliente ficam. Se faltar um, ele é recriado. Um orquestrador que saiu é reiniciado. O `heal` roda após cada restore do tmux-resurrect (`@resurrect-hook-post-restore-all`, só se estiver vazio).
+- **Claude é iniciado por `agent-hub run`**, executado direto pelo tmux, em vez de `send-keys`. O prompt chega intacto como argumento, e quando o Claude sai o pane vira um shell de login. O orquestrador recebe o papel via `--append-system-prompt`, sem gastar um turno.
+- **Estados do hook:**
+  - SessionStart → idle (com `source=compact`, ignorado);
+  - UserPromptSubmit e PostToolUse → working;
+  - permissão, pergunta, plano e input MCP → waiting, com `@agent_note` dizendo o quê;
+  - Stop → done;
+  - StopFailure → error;
+  - SessionEnd com `clear` ou `resume` → ignorado; nos outros casos, stopped.
+  - O comando registrado termina em `|| true`: exit 2 num PreToolUse bloquearia as ferramentas. O hook não imprime nada no stdout.
+- **Listagem:** uma chamada `tmux list-panes`, mais um awk (`lib/rows.awk`) que lê os marcadores, o HEAD dos worktrees e o cache do gh, sem nenhum `git` por refresh. O fzf atualiza a cada 5s quando o usuário está parado, e na hora a cada evento do hook (`--listen`).
+- **No tmux.conf fica uma linha** (`run-shell '<repo>/agent-hub.tmux'`), no fim do arquivo, depois do tpm. O `tmux-init` faz o bind da tecla e adiciona ` #{E:@agent_hub_status}` ao `status-right` uma única vez; o segmento é um formato puro do tmux, sem processo. Não sobrescreve bind alheio e mantém o `#(continuum_save.sh)`.
+- **`close`:** faz o trabalho de git antes e mata a window por último; quem estava olhando a task vai para o hub em vez de ser desconectado. **`new`** descobre o branch base (`origin/HEAD`), funciona offline e sem remote, e cria o branch sem tracking.
+- **Novos comandos:** `open`, `send` (recusa quando o agente espera resposta), `peek`, `heal`, `config edit`, e `new` interativo num terminal.
+- **Não usar `@resurrect-processes` para o claude:** o agent-hub já retoma com `claude --continue`.
+
+## 18. v2.1: hub no estilo agent-deck (decisões de 2026-10-26)
+
+Motivo: depois de usar a v2, o usuário achou a UX do dashboard inferior à do agent-deck e pediu o mesmo modelo: tela dividida, sessões e grupos à esquerda, preview à direita, um "+ new session" e formas de renomear e apagar.
+
+Decisões (perguntadas ao usuário e aprovadas):
+1. **Sem orquestrador.** O hub é só o dashboard, em tela cheia. Substitui o §10 e a parte do orquestrador do §17.
+2. **Letras em tudo** (hub e popup Ctrl+Q), sem linha de input: `/` abre a busca e Esc volta à árvore. Substitui a decisão 2 do §17 (digitar filtra, menu no Tab, Ctrl+letra).
+3. **Nova sessão em 3 passos, sem prompt:** categoria (existente ou nova) → repo (filtra ao digitar) → nome (ticket do Jira ou texto livre, transformado num nome válido mantendo maiúsculas: `PROJ-1234 fix login` → `PROJ-1234-fix-login`). Ao criar, a task abre e o usuário fala direto com o Claude.
+
+Mudanças técnicas:
+- **Layout:** `--no-input`, lista com borda superior `SESSIONS`, preview à direita (55%). Ele vai para baixo quando o terminal tem menos de ~100 colunas (`<55(...)`), porque o limiar do fzf mede a largura do próprio preview, não a do terminal. O título `PREVIEW` é a primeira linha do próprio preview, porque uma borda só à esquerda não tem linha para um label do fzf.
+- **Cabeçalho e rodapé:** o cabeçalho tem os agentes por estado (arquivo `.summary` escrito pelo `rows.awk`) e a mensagem da última ação. O rodapé mostra as teclas da linha selecionada; ele troca no evento `focus`, sem iniciar o agent-hub.
+- **Busca:** `/` faz `show-input` e `unbind` das letras, e digitar troca para a lista plana. Esc faz `clear-query+rebind(...)`, e o `hide-input` vem depois, num `bg-transform`: o fzf desfaz uma mudança da query feita na mesma cadeia de ações de um `hide-input`.
+- **Diálogos:**
+  - no hub, as perguntas abrem num `display-popup -B` (sem borda: o fzf desenha a moldura e o título), com o tamanho limitado ao do cliente;
+  - no popup Ctrl+Q, rodam dentro dele via `execute`, porque o tmux não empilha popups;
+  - uma linha sem pergunta possível (`d` numa categoria com tasks, por exemplo) só deixa a mensagem, sem abrir popup.
+- **Renomear** (`agent-hub rename G NOVO | G/T NOVO`, e `r`):
+  - categoria: `rename-session`, mais o `group=` dos marcadores e o arquivo de categorias recolhidas;
+  - task: `rename-window` e o `task=` do marcador;
+  - o branch e a pasta não mudam, porque o Claude pode estar rodando ali.
+- **Apagar:**
+  - `d` numa task é o `close` de sempre;
+  - numa sessão comum, pede confirmação e faz `kill-session` (antes, os clientes vão para o hub);
+  - uma categoria com tasks não é apagada: ela some com a última task.
+- **Lista de repos:** só entram diretórios com uma pasta `.git`. Os worktrees das tasks, cujo `.git` é um arquivo, não aparecem mais como repos.
+- **`agent-hub new` num terminal** imprime as mensagens (cancelado, criado, erro), em vez de gravá-las para um dashboard que não existe.
+- **Popup:** a primeira linha, `⌂ hub`, leva ao hub, que é criado ou consertado se preciso. O cursor começa nela, então Ctrl+Q, Enter volta ao hub de qualquer lugar.
+- **Hub antigo com orquestrador:** o pane do orquestrador é mantido, porque pode ter uma conversa em uso. `tmux kill-session -t hq && agent-hub` recria o hub só com o dashboard.
