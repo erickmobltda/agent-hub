@@ -8,33 +8,17 @@ Run many Claude Code agents in parallel inside **your own tmux**, one git worktr
 
 Pure bash 3.2 plus tools you already have: tmux ≥ 3.3, fzf ≥ 0.73, git, jq, curl, Claude Code, and optionally gh. No binary, no daemon, no database.
 
-```
- agent-hub   ◐ 1 waiting   ✓ 1 done   ● 1 working          │ ─ PREVIEW ─────────────────────────────
-─ SESSIONS ────────────────────────────────────────────────│ dev/backend-api  ◐ waiting 5m · Bash
-▌ ▾ 📁 dev (3) ◐1 ✓1 ●1                                   │ 📦 svc-a   🌿 feat/backend-api
-    ├─ ◐ backend-api  svc-a  #42 ✓  waiting 5m · Bash      │ 🔀 #42 open   ✅ checks pass
-    ├─ ✓ frontend     svc-a         done 1h                │ 📂 ~/code/svc-a--backend-api
-    └─ ● docs         svc-a         working 2m             │ ───────────────────────────────────────
-  ▸ 📁 ops (1) ○1                                         │ (the agent's live screen)
-  ▾ 💻 sessions (2)                                       │
-    ├─ ▪ 0            1 window   ~/code/agent-hub          │
-    └─ ▪ notes        2 windows  ~/notes                   │
-  + new session  category → repo → name                    │
-───────────────────────────────────────────────────────────│
-  ⏎ open  s send  r rename  m move  d close                │
-  o PR  w worktree  n new                                  │
-  / search  v layout  ? help  q quit                       │
-```
+![The hub: categories and their agents on the left; on the right, the selected agent's repo, branch, PR, worktree and screen](docs/images/hub.png)
 
 - **Header:** the agents per state, then the result of the last action.
 - **Left:** each category (a tmux session) with its tasks; the ones that need you come first. `▸` is folded. Your other tmux sessions are under `sessions`.
-- **Right:** for a task, its repo, branch, PR and checks, worktree, and the agent's screen; for a category, its agents. The icons are emoji by default; `agent-hub config set icons nerd` uses Nerd Font glyphs instead (your terminal needs a Nerd Font), and `off` removes them.
+- **Right:** for a task, its repo, branch, PR and checks, worktree, and the agent's screen; for a category, its agents. The icons are emoji by default; `agent-hub config set icons nerd` uses Nerd Font glyphs instead, as in these screenshots (your terminal needs a Nerd Font), and `off` removes them.
 - **Footer:** the keys of the selected row. They can be clicked too.
 
 ## Install
 
 ```sh
-git clone <this repo> && cd agent-hub
+git clone https://github.com/erickmobltda/agent-hub && cd agent-hub
 ./install.sh          # shows each change, asks, and backs files up
 agent-hub setup       # where your repos are, branch prefix, where worktrees go
 agent-hub             # open the hub
@@ -61,6 +45,8 @@ Nothing else is changed: no other options, and no other keys. Agent windows only
 ## Using it
 
 - **`agent-hub`** opens the hub (creating or repairing it). **Ctrl+Q** opens the same dashboard as a popup from anywhere; `q`, Esc or Ctrl+Q closes it. Its first row, `⌂ hub`, is where the cursor starts, so **Ctrl+Q, Enter** goes to the hub. In the hub, `q` takes you back to the session you came from.
+
+  ![Ctrl+Q over an agent's window: the same dashboard as a popup](docs/images/popup.png)
 - **Layout:** the preview is on the right, and below the list when the terminal is narrower than about 100 columns. `v` puts it below the list (or back on the right) at any width, and the choice is remembered.
 - **New session:** `n`, or Enter on `+ new session`. A small dialog asks three things:
   1. **category:** pick one, or type a new name;
@@ -68,6 +54,8 @@ Nothing else is changed: no other options, and no other keys. Agent windows only
   3. **name:** a ticket like `PROJ-1234`, or a few words. Spaces and other characters become `-` and case is kept. While you type, the dialog shows the window and branch it becomes: `PROJ-1234 fix login` → `PROJ-1234-fix-login`, branch `feat/PROJ-1234-fix-login`.
 
   It then creates the worktree and branch, starts Claude there and opens it, so you talk to Claude directly. In a terminal, `agent-hub new` asks the same three things.
+
+  ![The new session dialog at its last step: the name typed and the window and branch it becomes](docs/images/new-session.png)
 - **Rename:** `r` on a category or a task. A task keeps its branch and folder, since Claude may be running there.
 - **Delete:** `d` on a task closes it (see below). A category goes away with its last task. `d` on a plain tmux session deletes it after a confirmation.
 
@@ -100,6 +88,8 @@ In the hub, the questions open in a dialog over the dashboard; in the popup they
 - what it checks: uncommitted changes, commits not pushed, stash, and the PR state;
 - the choices: cancel, close keeping the branch, or close deleting it;
 - `git branch -D` is offered only when the PR is merged.
+
+![The close menu: the uncommitted changes and the open PR it would affect, and the choices, cancel first](docs/images/close.png)
 
 ### States
 
@@ -189,4 +179,6 @@ tests/run.sh                 # everything
 tests/run.sh test_hook.sh    # one file
 ```
 
-Pure bash on an isolated tmux server (`tmux -L ahtest<pid>`), with a temporary HOME, temporary repos with a local bare origin, and stub `claude`, `gh` and `open`. The popup tests attach a real nested tmux client and press Ctrl+Q through it. Every script passes `bash -n` first; `shellcheck` runs when installed.
+Pure bash on an isolated tmux server (`tmux -L ahtest<pid>`), with a temporary HOME, temporary repos with a local bare origin, and stub `claude`, `gh`, `open`, `pbcopy` and `idea`. The popup tests attach a real nested tmux client and press Ctrl+Q through it. Every script passes `bash -n` first; `shellcheck` runs when installed.
+
+The screenshots in `docs/images/` come from `docs/screenshots/make.sh`, which builds a demo on its own tmux server and photographs it. The demo has fake repos, agents and pull requests, and nothing of yours is read or changed. It needs macOS, Google Chrome (headless) and python3; for the icons, MesloLGS Nerd Font Mono.
