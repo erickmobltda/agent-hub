@@ -17,7 +17,7 @@
 # the refresh, after a reload through the `load` event: a change made while fzf reloads with
 # tracking on would be lost.
 
-DASH_LETTERS='j,k,h,l,n,r,d,m,s,o,q,?,/,tab'
+DASH_LETTERS='j,k,h,l,n,r,d,m,s,o,q,v,?,/,tab'
 # Leaving the search: clear it, give the letters back their actions, hide the input. fzf undoes a
 # query change made in the same action chain as hide-input, so that one comes a moment later.
 DASH_SEARCH_OFF="clear-query+rebind($DASH_LETTERS)+bg-transform(echo hide-input)"
@@ -98,6 +98,22 @@ dash_refresh() {
   printf '%s\n' "$actions"
 }
 
+# Where the preview goes, shared by every dashboard and kept across restarts (v switches it): side
+# by side, falling back to stacked on narrow panes (fzf's threshold measures the preview, not the
+# pane: <55 is a pane under ~100 columns), or always stacked.
+DASH_PV_RIGHT='right,55%,border-left,<55(down,55%,border-top)'
+DASH_PV_DOWN='down,55%,border-top'
+dash_layout() { # dash_layout [toggle]: prints the --preview-window value
+  local f cur
+  f="$(runtime_dir)/layout"
+  cur=$(cat "$f" 2>/dev/null)
+  if [ "${1:-}" = toggle ]; then
+    [ "$cur" = down ] && cur=right || cur=down
+    printf '%s\n' "$cur" > "$f"
+  fi
+  if [ "$cur" = down ]; then printf '%s\n' "$DASH_PV_DOWN"; else printf '%s\n' "$DASH_PV_RIGHT"; fi
+}
+
 # Collapsed groups, shared by every dashboard: one name per line.
 dash_collapse() { # dash_collapse <group> <on|off|toggle>
   local f="$(runtime_dir)/collapsed" on=0
@@ -168,7 +184,7 @@ dash_run() { # dash_run <hq|popup>
   export AGENT_HUB_BIN AGENT_HUB_DASH_MODE AGENT_HUB_DASH_INST AGENT_HUB_DASH_ROWS AGENT_HUB_DASH_STAMP
   unset FZF_DEFAULT_OPTS FZF_DEFAULT_OPTS_FILE
   # Footer: the keys of the selected row (chosen on focus, without starting agent-hub).
-  global=$(dash_keys / search '?' help q quit)
+  global=$(dash_keys / search v layout '?' help q quit)
   AH_KEYS_T="$(dash_keys ⏎ open s send r rename m move d close o PR n new)
 $global"
   AH_KEYS_G="$(dash_keys ⏎ fold n 'new here' r rename d delete)
@@ -203,7 +219,7 @@ $global"
     --color='list-label:magenta:bold,preview-label:magenta:bold,hl:yellow:bold,hl+:yellow:bold,gutter:-1' \
     --color='scrollbar:dim,preview-border:dim' \
     --preview='"$AGENT_HUB_BIN" dash --preview {1} {2} {3} {5} {6} {7} {8} {9} {10} {11} {12} {13} {14} {15}' \
-    --preview-window='right,55%,border-left,<55(down,55%,border-top)' \
+    --preview-window="$(dash_layout)" \
     --bind='ctrl-r:bg-transform:"$AGENT_HUB_BIN" dash --refresh' \
     --bind='every(5):bg-transform:[ "${FZF_IDLE_TIME:-0}" -ge 2 ] && "$AGENT_HUB_BIN" dash --refresh' \
     --bind='load:untrack-current+transform-header:cat "$AGENT_HUB_DASH_ROWS.header" 2>/dev/null' \
@@ -219,6 +235,7 @@ $global"
     --bind='l,right:transform:[ -z {q} ] && [ {1} = g ] && "$AGENT_HUB_BIN" dash --do expand {1} {2} {3} || { [ "$FZF_INPUT_STATE" != hidden ] && echo forward-char; }' \
     --bind='o:transform:"$AGENT_HUB_BIN" dash --do pr {1} {2} {3} {9} {10} {14} {16}' \
     --bind='q:transform:"$AGENT_HUB_BIN" dash --do quit {1} {2} {3}' \
+    --bind='v:transform:"$AGENT_HUB_BIN" dash --do layout {1} {2} {3}' \
     --bind='?:preview:"$AGENT_HUB_BIN" dash --help' \
     --bind="$(ask n 'new {1} {2} {3} {17} {16}')" \
     --bind="$(ask r 'rename {1} {2} {3}')" \
@@ -264,6 +281,7 @@ ${K}agent-hub${R}  ${D}keys${R}
   ${K}s${R}           send a message to an agent
   ${K}o${R}           open the pull request
   ${K}/${R}           search (Esc: back to the tree)
+  ${K}v${R}           preview on the right or below the list (remembered)
   ${K}alt-⏎${R}       open zoomed
   ${K}^r${R}          refresh
   ${K}q${R}           quit (in the hub: back to the previous session)
@@ -378,6 +396,7 @@ dash_do() {
     zoom) dash_open "$kind" "$id" "$target" 1 ;;
     pr) dash_pr "$kind" "$@" ;;
     quit) dash_quit ;;
+    layout) printf 'change-preview-window:%s\n' "$(dash_layout toggle)" ;;
     new) ui_new_agent "${1:-}" "${2:-}" ;;
     rename) ui_rename "$kind" "$id" "$target" ;;
     delete) ui_delete "$kind" "$id" "$target" ;;

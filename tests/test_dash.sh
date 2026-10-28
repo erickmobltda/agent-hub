@@ -128,6 +128,13 @@ fzf_post "$sock" 'first'; sleep 0.2
 tm send-keys -t "$dpane" j
 wait_for 2 current_has t:dev/docs
 assert_eq "" "$(fzf_get "$sock" | jq -r .query)" "search: after esc, letters are keys again"
+tm send-keys -t "$dpane" /
+tm send-keys -t "$dpane" -l "dev"
+wait_for 2 sh -c "[ \"\$(curl -s -m 1 --unix-socket '$sock' http://localhost | jq -r .query)\" = dev ]"
+assert_eq "dev" "$(fzf_get "$sock" | jq -r .query)" "search: action letters (v, d...) are typed while searching"
+check "search: v typed in the search leaves the layout alone" [ ! -e "$AGENT_HUB_RUNTIME/layout" ]
+tm send-keys -t "$dpane" Escape
+wait_for 3 total_is 8
 tm send-keys -t "$dpane" Right
 wait_for 3 total_is 9
 

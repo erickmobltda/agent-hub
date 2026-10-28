@@ -22,7 +22,7 @@ Pure bash 3.2 plus tools you already have: tmux ≥ 3.3, fzf ≥ 0.73, git, jq, 
   + new session  category → repo → name                    │
 ───────────────────────────────────────────────────────────│
   ⏎ open  s send  r rename  m move  d close  o PR  n new   │
-  / search  ? help  q quit                                 │
+  / search  v layout  ? help  q quit                       │
 ```
 
 - **Header:** the agents per state, then the result of the last action.
@@ -59,7 +59,7 @@ Nothing else is changed: no other options, and no other keys. Agent windows only
 ## Using it
 
 - **`agent-hub`** opens the hub (creating or repairing it). **Ctrl+Q** opens the same dashboard as a popup from anywhere; `q`, Esc or Ctrl+Q closes it. Its first row, `⌂ hub`, is where the cursor starts, so **Ctrl+Q, Enter** goes to the hub. In the hub, `q` takes you back to the session you came from.
-- **Layout:** the preview is on the right, and below the list when the terminal is narrower than about 100 columns.
+- **Layout:** the preview is on the right, and below the list when the terminal is narrower than about 100 columns. `v` puts it below the list (or back on the right) at any width, and the choice is remembered.
 - **New session:** `n`, or Enter on `+ new session`. A small dialog asks three things:
   1. **category:** pick one, or type a new name;
   2. **repo:** type to filter. The repo of the selected task, or of your current directory, comes first;
@@ -85,6 +85,7 @@ There is no input line: letters are actions, and `/` opens the search.
 | s | send a message to the agent without leaving the dashboard |
 | o | open its pull request |
 | / | search by task, category, repo, state or PR. The tree becomes a flat list, so tasks of folded categories are found too. Esc goes back to the tree |
+| v | preview on the right or below the list (remembered) |
 | Alt+Enter | open zoomed |
 | ? | these keys, in the preview |
 | q | popup: close it · hub: back to the previous session |
