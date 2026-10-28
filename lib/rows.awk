@@ -8,7 +8,10 @@
 #   AH_GHDIR (cache dir), AH_STALE (file that receives repos whose cache is old), AH_TTL (seconds),
 #   AH_VIEW (tree | flat: what goes to stdout), AH_ALSO (file that receives the other view),
 #   AH_COLLAPSED (file listing collapsed groups; their tasks are left out of the tree),
-#   AH_SUMMARY (file that receives the header line: agents per state).
+#   AH_SUMMARY (file that receives the header line: agents per state),
+#   AH_ICON_GROUP / AH_ICON_SESSIONS (icon and space before a category / "sessions" header, or empty),
+#   AH_STUCK (file that receives "pane<TAB>last output" of agents shown idle instead of working) and
+#   AH_STUCK_AFTER (seconds without output after which a "working" agent is idle).
 # Output, hq/popup (fzf shows field 4):
 #   kind id target display status since note repo branch worktree pr_num pr_state pr_checks pr_url title repo_path group
 #   kinds: g group header (tree only) · t task (live or stopped) · p Claude started by hand ·
@@ -45,6 +48,13 @@ $1 == "P" {
   np++; ps[np] = $2; pw[np] = $3; pwid[np] = $4; pid[np] = $5; pidx[np] = $6 + 0; prole[np] = $7
   pst[np] = $8; psince[np] = $9; pnote[np] = $10; pwt[np] = $11; ppath[np] = $12; pcmd[np] = $13
   ptitle[np] = $14; pdead[np] = $15
+  # Claude Code runs no hook when the user interrupts a turn (Esc), so "working" can outlive the
+  # work. A working Claude redraws its spinner every second: a window with no output for a while
+  # means it is back at the prompt.
+  if (pst[np] == "working" && $16 > 0 && now - $16 > ENVIRON["AH_STUCK_AFTER"] + 0) {
+    pst[np] = "idle"; psince[np] = $16
+    if (ENVIRON["AH_STUCK"] != "") print $5 "\t" $16 > ENVIRON["AH_STUCK"]
+  }
   next
 }
 $1 == "S" { ns++; sn[ns] = $2; swin[ns] = $3; spath[ns] = $4; spane[ns] = $5; next }
@@ -250,7 +260,7 @@ function display_tree(n, last,   st, nm, w, conn) {
 }
 
 function header(g,   k, s, sum, nm, c) {
-  if (g == "*sessions") { nm = "sessions"; c = SESS } else { nm = g; c = GROUP }
+  if (g == "*sessions") { nm = ENVIRON["AH_ICON_SESSIONS"] "sessions"; c = SESS } else { nm = ENVIRON["AH_ICON_GROUP"] g; c = GROUP }
   sum = ""
   for (k = 1; k <= 7; k++) { s = order[k]; if (gst[g, s] > 0) sum = sum " " col[s] icon[s] gst[g, s] R }
   return c ((g in C) ? "▸" : "▾") " " nm R " " GRAY "(" gcount[g] ")" R sum

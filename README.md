@@ -10,25 +10,26 @@ Pure bash 3.2 plus tools you already have: tmux ≥ 3.3, fzf ≥ 0.73, git, jq, 
 
 ```
  agent-hub   ◐ 1 waiting   ✓ 1 done   ● 1 working          │ ─ PREVIEW ─────────────────────────────
-─ SESSIONS ────────────────────────────────────────────────│ dev/backend-api  waiting 5m · Bash
-▌ ▾ dev (3) ◐1 ✓1 ●1                                       │ svc-a · feat/backend-api · PR #42 open
-    ├─ ◐ backend-api  svc-a  #42 ✓  waiting 5m · Bash      │ ~/code/svc-a--backend-api
-    ├─ ✓ frontend     svc-a         done 1h                │ ───────────────────────────────────────
-    └─ ● docs         svc-a         working 2m             │ (the agent's live screen)
-  ▸ ops (1) ○1                                             │
-  ▾ sessions (2)                                           │
+─ SESSIONS ────────────────────────────────────────────────│ dev/backend-api  ◐ waiting 5m · Bash
+▌ ▾ 📁 dev (3) ◐1 ✓1 ●1                                   │ 📦 svc-a   🌿 feat/backend-api
+    ├─ ◐ backend-api  svc-a  #42 ✓  waiting 5m · Bash      │ 🔀 #42 open   ✅ checks pass
+    ├─ ✓ frontend     svc-a         done 1h                │ 📂 ~/code/svc-a--backend-api
+    └─ ● docs         svc-a         working 2m             │ ───────────────────────────────────────
+  ▸ 📁 ops (1) ○1                                         │ (the agent's live screen)
+  ▾ 💻 sessions (2)                                       │
     ├─ ▪ 0            1 window   ~/code/agent-hub          │
     └─ ▪ notes        2 windows  ~/notes                   │
   + new session  category → repo → name                    │
 ───────────────────────────────────────────────────────────│
-  ⏎ open  s send  r rename  m move  d close  o PR  n new   │
-  / search  ? help  q quit                                 │
+  ⏎ open  s send  r rename  m move  d close                │
+  o PR  w worktree  n new                                  │
+  / search  v layout  ? help  q quit                       │
 ```
 
 - **Header:** the agents per state, then the result of the last action.
 - **Left:** each category (a tmux session) with its tasks; the ones that need you come first. `▸` is folded. Your other tmux sessions are under `sessions`.
-- **Right:** a task's repo, branch, PR and worktree, and the agent's screen; for a category, its agents.
-- **Footer:** the keys of the selected row.
+- **Right:** for a task, its repo, branch, PR and checks, worktree, and the agent's screen; for a category, its agents. The icons are emoji by default; `agent-hub config set icons nerd` uses Nerd Font glyphs instead (your terminal needs a Nerd Font), and `off` removes them.
+- **Footer:** the keys of the selected row. They can be clicked too.
 
 ## Install
 
@@ -52,14 +53,15 @@ Each edit shows the diff, asks first and keeps a `*.agent-hub.bak.<epoch>` backu
 The line only runs `agent-hub tmux-init`, which:
 - binds `hub_key` (default **Ctrl+Q**, no prefix needed) to the popup. It never replaces a key you already bound, and refuses your prefix key;
 - appends ` #{E:@agent_hub_status}` to `status-right` once: `◐2 ✓1 ●3` (waiting, done, working), counted by tmux itself with no extra process. Turn it off with `status_bar=off`;
-- if tmux-resurrect is installed and `@resurrect-hook-post-restore-all` is unset, uses it to repair the hub after every restore.
+- if tmux-resurrect is installed and `@resurrect-hook-post-restore-all` is unset, uses it to repair the hub after every restore;
+- adds `xterm-ghostty:hyperlinks` to `terminal-features` once, so the dashboard's links reach Ghostty (tmux doesn't detect that Ghostty supports them). It takes effect the next time you attach.
 
 Nothing else is changed: no other options, and no other keys. Agent windows only get `automatic-rename off` so they keep their task name.
 
 ## Using it
 
 - **`agent-hub`** opens the hub (creating or repairing it). **Ctrl+Q** opens the same dashboard as a popup from anywhere; `q`, Esc or Ctrl+Q closes it. Its first row, `⌂ hub`, is where the cursor starts, so **Ctrl+Q, Enter** goes to the hub. In the hub, `q` takes you back to the session you came from.
-- **Layout:** the preview is on the right, and below the list when the terminal is narrower than about 100 columns.
+- **Layout:** the preview is on the right, and below the list when the terminal is narrower than about 100 columns. `v` puts it below the list (or back on the right) at any width, and the choice is remembered.
 - **New session:** `n`, or Enter on `+ new session`. A small dialog asks three things:
   1. **category:** pick one, or type a new name;
   2. **repo:** type to filter. The repo of the selected task, or of your current directory, comes first;
@@ -83,8 +85,10 @@ There is no input line: letters are actions, and `/` opens the search.
 | d | close a task · delete a plain session |
 | m | move a task to another category |
 | s | send a message to the agent without leaving the dashboard |
-| o | open its pull request |
+| o | open its pull request (or ⌘-click it in the preview) |
+| w | copy the worktree's path and open it in IntelliJ IDEA, when it is installed |
 | / | search by task, category, repo, state or PR. The tree becomes a flat list, so tasks of folded categories are found too. Esc goes back to the tree |
+| v | preview on the right or below the list (remembered) |
 | Alt+Enter | open zoomed |
 | ? | these keys, in the preview |
 | q | popup: close it · hub: back to the previous session |
@@ -111,7 +115,7 @@ They come from Claude Code hooks; the hook takes about 20 ms, prints nothing and
 | ○ `idle` | done and seen, or fresh |
 | ◌ `stopped` | Claude exited, or the window is gone (tmux restarted) |
 
-`/clear` and compaction keep the agent listed. A Claude you start by hand in any pane shows up too, under its session, until it exits.
+Interrupting Claude (Esc) runs no hook, so an agent that shows `working` but has had nothing new on its screen for 2 minutes is shown, and recorded, as `idle`. `/clear` and compaction keep the agent listed. A Claude you start by hand in any pane shows up too, under its session, until it exits.
 
 ## Configuration
 
@@ -127,6 +131,7 @@ They come from Claude Code hooks; the hook takes about 20 ms, prints nothing and
 | `claude_pane_pct` | `70` | height of the Claude pane; a shell pane in the worktree takes the rest |
 | `hub_key` | `C-q` | the popup key: `C-q`, `prefix:<key>` (after your prefix) or `off` |
 | `status_bar` | `on` | agent counts in `status-right` |
+| `icons` | `emoji` | icons in the preview and on category headers: `emoji`, `nerd` (needs a Nerd Font in the terminal) or `off` |
 | `github` | `auto` | PR status through `gh` when it is logged in; `off` to never call it |
 | `hq_session` | `hq` | name of the hub session |
 

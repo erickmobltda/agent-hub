@@ -17,7 +17,7 @@
 # the refresh, after a reload through the `load` event: a change made while fzf reloads with
 # tracking on would be lost.
 
-DASH_LETTERS='j,k,h,l,n,r,d,m,s,o,q,?,/,tab'
+DASH_LETTERS='j,k,h,l,n,r,d,m,s,o,w,q,v,?,/,tab'
 # Leaving the search: clear it, give the letters back their actions, hide the input. fzf undoes a
 # query change made in the same action chain as hide-input, so that one comes a moment later.
 DASH_SEARCH_OFF="clear-query+rebind($DASH_LETTERS)+bg-transform(echo hide-input)"
@@ -58,7 +58,6 @@ dash_views() {
   local f view
   f=$(dash_rows_file)
   view=$(cat "$f.view" 2>/dev/null); [ "$view" = flat ] || view=tree
-  [ -s "$f.view" ] || echo tree > "$f.view"
   AH_SUMMARY="$f.summary" rows "${AGENT_HUB_DASH_MODE:-popup}" tree "$f.flat.$$" > "$f.tree.$$" 2>/dev/null
   if cmp -s "$f.$view.$$" "$f.$view"; then
     mv "$f.tree.$$" "$f.tree"; mv "$f.flat.$$" "$f.flat"
@@ -96,6 +95,22 @@ dash_refresh() {
     fi
   fi
   printf '%s\n' "$actions"
+}
+
+# Where the preview goes, shared by every dashboard and kept across restarts (v switches it): side
+# by side, falling back to stacked on narrow panes (fzf's threshold measures the preview, not the
+# pane: <55 is a pane under ~100 columns), or always stacked.
+DASH_PV_RIGHT='right,55%,border-left,<55(down,55%,border-top)'
+DASH_PV_DOWN='down,55%,border-top'
+dash_layout() { # dash_layout [toggle]: prints the --preview-window value
+  local f cur
+  f="$(runtime_dir)/layout"
+  cur=$(cat "$f" 2>/dev/null)
+  if [ "${1:-}" = toggle ]; then
+    [ "$cur" = down ] && cur=right || cur=down
+    printf '%s\n' "$cur" > "$f"
+  fi
+  if [ "$cur" = down ]; then printf '%s\n' "$DASH_PV_DOWN"; else printf '%s\n' "$DASH_PV_RIGHT"; fi
 }
 
 # Collapsed groups, shared by every dashboard: one name per line.
@@ -145,6 +160,7 @@ cmd_dash() {
     --dialog) shift; dash_dialog "$@" ;;
     --help) dash_help ;;
     --header) dash_header ;;
+    --click) dash_click "${2:-}" ;;
     --lines) rows "${AGENT_HUB_DASH_MODE:-popup}" "${AGENT_HUB_DASH_VIEW:-tree}" ;;
     *) die "$EX_ERR" "usage: dash [--hq|--popup]" ;;
   esac
@@ -168,16 +184,17 @@ dash_run() { # dash_run <hq|popup>
   export AGENT_HUB_BIN AGENT_HUB_DASH_MODE AGENT_HUB_DASH_INST AGENT_HUB_DASH_ROWS AGENT_HUB_DASH_STAMP
   unset FZF_DEFAULT_OPTS FZF_DEFAULT_OPTS_FILE
   # Footer: the keys of the selected row (chosen on focus, without starting agent-hub).
-  global=$(dash_keys / search '?' help q quit)
-  AH_KEYS_T="$(dash_keys ⏎ open s send r rename m move d close o PR n new)
+  global=$(dash_keys / search v layout '?' help q quit)
+  AH_KEYS_T="$(dash_keys ⏎ open s send r rename m move d close)
+$(dash_keys o PR w worktree n new)
 $global"
   AH_KEYS_G="$(dash_keys ⏎ fold n 'new here' r rename d delete)
 $global"
   AH_KEYS_S="$(dash_keys ⏎ switch d delete n new)
 $global"
-  AH_KEYS_N="$(dash_keys ⏎ 'new session' j/k move)
+  AH_KEYS_N="$(dash_keys ⏎ 'new session')
 $global"
-  AH_KEYS_H="$(dash_keys ⏎ 'go to the hub' j/k move)
+  AH_KEYS_H="$(dash_keys ⏎ 'go to the hub')
 $global"
   AH_KEYS_SEARCH="$(dash_keys ⏎ open esc 'back to the tree')"
   export AH_KEYS_T AH_KEYS_G AH_KEYS_S AH_KEYS_N AH_KEYS_H AH_KEYS_SEARCH
@@ -203,12 +220,12 @@ $global"
     --color='list-label:magenta:bold,preview-label:magenta:bold,hl:yellow:bold,hl+:yellow:bold,gutter:-1' \
     --color='scrollbar:dim,preview-border:dim' \
     --preview='"$AGENT_HUB_BIN" dash --preview {1} {2} {3} {5} {6} {7} {8} {9} {10} {11} {12} {13} {14} {15}' \
-    --preview-window='right,55%,border-left,<55(down,55%,border-top)' \
+    --preview-window="$(dash_layout)" \
     --bind='ctrl-r:bg-transform:"$AGENT_HUB_BIN" dash --refresh' \
     --bind='every(5):bg-transform:[ "${FZF_IDLE_TIME:-0}" -ge 2 ] && "$AGENT_HUB_BIN" dash --refresh' \
     --bind='load:untrack-current+transform-header:cat "$AGENT_HUB_DASH_ROWS.header" 2>/dev/null' \
     --bind='focus:transform-footer:if [ "$FZF_INPUT_STATE" != hidden ]; then printf %s "$AH_KEYS_SEARCH"; else case {1} in t|p) printf %s "$AH_KEYS_T" ;; g) printf %s "$AH_KEYS_G" ;; s) printf %s "$AH_KEYS_S" ;; h) printf %s "$AH_KEYS_H" ;; *) printf %s "$AH_KEYS_N" ;; esac; fi' \
-    --bind='change:transform:v=tree; [ -n {q} ] && v=flat; f=$AGENT_HUB_DASH_ROWS; if [ "$(cat "$f.view")" != "$v" ]; then echo "$v" > "$f.view"; echo "reload-sync(cat \"$f.$v\")+first"; else echo first; fi' \
+    --bind='change:transform:v=tree; [ -n {q} ] && v=flat; f=$AGENT_HUB_DASH_ROWS; if [ "$(cat "$f.view")" != "$v" ]; then echo "$v" > "$f.view.$$"; mv "$f.view.$$" "$f.view"; echo "reload-sync(cat \"$f.$v\")+first"; else echo first; fi' \
     --bind="/:show-input+unbind($DASH_LETTERS)+transform-footer:printf %s \"\$AH_KEYS_SEARCH\"" \
     --bind="esc:transform:$esc" --bind="$ctrlc" \
     --bind='j:down,k:up' \
@@ -218,7 +235,10 @@ $global"
     --bind='h,left:transform:[ -z {q} ] && [ {1} = g ] && "$AGENT_HUB_BIN" dash --do collapse {1} {2} {3} || { [ "$FZF_INPUT_STATE" != hidden ] && echo backward-char; }' \
     --bind='l,right:transform:[ -z {q} ] && [ {1} = g ] && "$AGENT_HUB_BIN" dash --do expand {1} {2} {3} || { [ "$FZF_INPUT_STATE" != hidden ] && echo forward-char; }' \
     --bind='o:transform:"$AGENT_HUB_BIN" dash --do pr {1} {2} {3} {9} {10} {14} {16}' \
+    --bind='w:transform:"$AGENT_HUB_BIN" dash --do worktree {1} {2} {3} {10}' \
+    --bind='click-footer:transform:"$AGENT_HUB_BIN" dash --click "$FZF_CLICK_FOOTER_WORD"' \
     --bind='q:transform:"$AGENT_HUB_BIN" dash --do quit {1} {2} {3}' \
+    --bind='v:transform:"$AGENT_HUB_BIN" dash --do layout {1} {2} {3}' \
     --bind='?:preview:"$AGENT_HUB_BIN" dash --help' \
     --bind="$(ask n 'new {1} {2} {3} {17} {16}')" \
     --bind="$(ask r 'rename {1} {2} {3}')" \
@@ -263,10 +283,14 @@ ${K}agent-hub${R}  ${D}keys${R}
   ${K}m${R}           move a task to another category
   ${K}s${R}           send a message to an agent
   ${K}o${R}           open the pull request
+  ${K}w${R}           copy the worktree's path and open it in IntelliJ IDEA (when installed)
   ${K}/${R}           search (Esc: back to the tree)
+  ${K}v${R}           preview on the right or below the list (remembered)
   ${K}alt-⏎${R}       open zoomed
   ${K}^r${R}          refresh
   ${K}q${R}           quit (in the hub: back to the previous session)
+
+${D}The keys in the footer can be clicked too. ⌘-click the PR in the preview opens it.${R}
 
 ${D}States: ◐ waiting for you · ✗ error · ✓ done · ● working · ○ idle · ◌ stopped${R}
 EOF
@@ -299,19 +323,19 @@ dash_preview() {
   case "$kind" in
     g)
       if [ "$target" = "*sessions" ]; then
-        printf "\033[1;34m▪ sessions${R}\n${D}your tmux sessions without agents${R}\n\n"
+        printf "\033[1;34m%ssessions${R}\n${D}your tmux sessions without agents${R}\n\n" "$(icon sessions)"
         t list-sessions -F '#{session_name}'"$TAB"'#{session_windows}'"$TAB"'#{?session_attached,attached,}' 2>/dev/null |
           awk -F'\t' -v hq="$cfg_hq_session" '$1 != hq { printf "  \033[34m▪\033[0m \033[1m%-16s\033[0m \033[2m%s window%s %s\033[0m\n", $1, $2, ($2 == 1 ? "" : "s"), $3 }'
         printf "\n${D}⏎ fold · on a session: ⏎ switch · d delete${R}\n"
       else
-        rows raw | awk -F'\t' -v g="$target" '
+        rows raw | awk -F'\t' -v g="$target" -v ic="$(icon category)" '
           BEGIN { E = "\033["; R = E "0m"; split("waiting error done starting working idle stopped", o, " ")
             c["waiting"] = E "1;33m"; c["error"] = E "1;31m"; c["done"] = E "1;36m"; c["starting"] = E "32m"
             c["working"] = E "1;32m"; c["idle"] = E "37m"; c["stopped"] = E "90m"
             i["waiting"] = "◐"; i["error"] = "✗"; i["done"] = "✓"; i["starting"] = "⟳"; i["working"] = "●"; i["idle"] = "○"; i["stopped"] = "◌" }
           $2 == g { n++; k[$4]++; line[n] = sprintf("  %s%s%s %s%-24s%s %s%-14s%s %s%s%s", c[$4], i[$4], R, E "1m", $3, R, E "34m", $6, R, c[$4], $4, R) }
           END {
-            printf "%s📁 %s%s\n", E "1;35m", g, R
+            printf "%s%s%s%s\n", E "1;35m", ic, g, R
             s = n " agent" (n == 1 ? "" : "s")
             for (x = 1; x <= 7; x++) if (k[o[x]]) s = s " · " c[o[x]] i[o[x]] " " k[o[x]] " " o[x] R
             printf "%s\n\n%s── agents ──%s\n", s, E "2m", R
@@ -340,19 +364,30 @@ dash_preview() {
     permission_prompt) note=permission ;; elicitation_dialog|agent_needs_input) note=input ;;
     AskUserQuestion) note=question ;; ExitPlanMode) note="plan approval" ;;
   esac
-  if [ -n "$prn" ]; then
-    pr="PR #$prn $(printf '%s' "$prs" | tr '[:upper:]' '[:lower:]')"
-    case "$prc" in pass) pr="$pr · checks ✓" ;; fail) pr="$pr · checks ✗" ;; pending) pr="$pr · checks running" ;; esac
-  fi
-  local SC
+  local SC SI PC used=4 # lines above the screen: name, repo and branch, worktree, separator
   case "$st" in
-    waiting) SC='\033[1;33m' ;; error) SC='\033[1;31m' ;; done) SC='\033[1;36m' ;;
-    working|starting) SC='\033[1;32m' ;; *) SC='\033[90m' ;;
+    waiting) SC='\033[1;33m'; SI='◐' ;; error) SC='\033[1;31m'; SI='✗' ;; done) SC='\033[1;36m'; SI='✓' ;;
+    working) SC='\033[1;32m'; SI='●' ;; starting) SC='\033[1;32m'; SI='⟳' ;; idle) SC='\033[90m'; SI='○' ;;
+    *) SC='\033[90m'; SI='◌' ;;
   esac
-  printf "\033[1;35m%s${R}  ${SC}%s${R} ${D}%s%s${R}\n" "${id#?:}" "$st" "$(elapsed "$since")" "${note:+ · waiting for $note}"
-  printf "\033[34m%s${R} ${D}·${R} \033[35m%s${R}%s\n" "$repo" "${br:-?}" "${pr:+  ·  $pr}"
-  printf "${D}%s${R}\n" "${wt/#$HOME/$tilde}"
-  [ -n "$title" ] && [ "$st" != stopped ] && printf "${D}“%s”${R}\n" "$title"
+  printf "\033[1;35m%s${R}  ${SC}%s %s${R} ${D}%s%s${R}\n" "${id#?:}" "$SI" "$st" "$(elapsed "$since")" "${note:+ · $note}"
+  printf "\033[34m%s%s${R}   \033[35m%s%s${R}\n" "$(icon repo)" "$repo" "$(icon branch)" "${br:-?}"
+  if [ -n "$prn" ]; then
+    case "$prs" in OPEN) PC='\033[32m' ;; MERGED) PC='\033[35m' ;; CLOSED) PC='\033[31m' ;; *) PC='\033[90m' ;; esac
+    pr=$(icon pr); [ -n "$pr" ] || pr='PR '
+    pr="$pr#$prn $(printf '%s' "$prs" | tr '[:upper:]' '[:lower:]')"
+    # A terminal link (OSC 8): ⌘-click opens the PR.
+    [ -n "${13:-}" ] && pr=$(printf '\033]8;;%s\033\\%s\033]8;;\033\\' "${13}" "$pr")
+    printf "${PC}%s${R}" "$pr"
+    case "$prc" in
+      pass) printf "   \033[32m%schecks pass${R}" "$(icon pass)" ;;
+      fail) printf "   \033[31m%schecks failing${R}" "$(icon fail)" ;;
+      pending) printf "   \033[33m%schecks running${R}" "$(icon pending)" ;;
+    esac
+    printf '\n'; used=$((used + 1))
+  fi
+  printf "${D}%s%s${R}\n" "$(icon worktree)" "${wt/#$HOME/$tilde}"
+  if [ -n "$title" ] && [ "$st" != stopped ]; then printf "${D}%s“%s”${R}\n" "$(icon title)" "$title"; used=$((used + 1)); fi
   printf "${D}%s${R}\n" '──────────────────────────────'
   if [ "$target" = - ] || [ -z "$target" ] || [ "$st" = stopped ]; then
     printf 'Claude is not running. Enter starts it again with the last conversation (claude --continue).\n\n'
@@ -361,7 +396,7 @@ dash_preview() {
       git -C "$wt" status --short 2>/dev/null | head -n 10
     fi
   else
-    dash_capture "$target" $((lines - 6))
+    dash_capture "$target" $((lines - used))
   fi
 }
 
@@ -377,7 +412,9 @@ dash_do() {
     open) dash_open "$kind" "$id" "$target" 0 ;;
     zoom) dash_open "$kind" "$id" "$target" 1 ;;
     pr) dash_pr "$kind" "$@" ;;
+    worktree) dash_worktree "$kind" "${1:-}" ;;
     quit) dash_quit ;;
+    layout) printf 'change-preview-window:%s\n' "$(dash_layout toggle)" ;;
     new) ui_new_agent "${1:-}" "${2:-}" ;;
     rename) ui_rename "$kind" "$id" "$target" ;;
     delete) ui_delete "$kind" "$id" "$target" ;;
@@ -417,6 +454,29 @@ dash_open() { # dash_open <kind> <id> <target> <zoom>
   else
     echo 'trigger(ctrl-r)'
   fi
+}
+
+dash_worktree() { # dash_worktree <kind> <worktree>: copies its path; opens it in IntelliJ IDEA when installed
+  local kind=$1 wt=$2 ide="" tilde='~'
+  echo 'trigger(ctrl-r)'
+  case "$kind" in t) ;; *) dash_msg "worktrees belong to tasks"; return ;; esac
+  [ -d "$wt" ] || { dash_msg "✗ the worktree is gone: $wt"; return; }
+  if command -v pbcopy >/dev/null 2>&1; then printf '%s' "$wt" | pbcopy
+  else printf '%s' "$wt" | t load-buffer -w -; fi
+  if command -v idea >/dev/null 2>&1; then (cd "$wt" && idea . >/dev/null 2>&1 &); ide=1
+  elif [ "$(uname)" = Darwin ] && open -a "IntelliJ IDEA" "$wt" >/dev/null 2>&1; then ide=1
+  fi
+  dash_msg "copied ${wt/#$HOME/$tilde}${ide:+ · opening it in IntelliJ IDEA}"
+}
+
+dash_click() { # dash_click <word clicked in the footer>: runs the key of that chip
+  case "$1" in
+    ⏎|open|fold|switch|session|hub) echo 'trigger(enter)' ;;
+    s|send) echo 'trigger(s)' ;; r|rename) echo 'trigger(r)' ;; m|move) echo 'trigger(m)' ;;
+    d|close|delete) echo 'trigger(d)' ;; o|PR) echo 'trigger(o)' ;; w|worktree) echo 'trigger(w)' ;;
+    n|new|here) echo 'trigger(n)' ;; /|search) echo 'trigger(/)' ;; v|layout) echo 'trigger(v)' ;;
+    '?'|help) echo 'trigger(?)' ;; q|quit) echo 'trigger(q)' ;; esc|back|tree) echo 'trigger(esc)' ;;
+  esac
 }
 
 dash_pr() { # dash_pr <kind> <branch> <worktree> <url> <repo path>

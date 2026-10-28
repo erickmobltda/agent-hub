@@ -9,7 +9,28 @@ EX_NOTFOUND=4
 
 TAB=$(printf '\t')
 
-CONFIG_KEYS="repos_roots worktree_location branch_prefix base_branch agent_cmd claude_pane_pct hub_key status_bar github hq_session"
+CONFIG_KEYS="repos_roots worktree_location branch_prefix base_branch agent_cmd claude_pane_pct hub_key status_bar icons github hq_session"
+
+# icon <name>: the glyph, and a space, for a repo, branch, pr, pass, fail, pending (PR checks),
+# worktree, title, category or sessions, in the configured style. icons=off gives nothing.
+icon() {
+  case "${cfg_icons:-emoji}:$1" in
+    off:*) ;;
+    nerd:repo) printf '\357\220\201 ' ;;     # nf-oct-repo U+F401
+    nerd:branch) printf '\356\234\245 ' ;;   # nf-dev-git_branch U+E725
+    nerd:pr) printf '\357\220\207 ' ;;       # nf-oct-git_pull_request U+F407
+    nerd:pass) printf '\357\200\214 ' ;;     # nf-fa-check U+F00C
+    nerd:fail) printf '\357\200\215 ' ;;     # nf-fa-times U+F00D
+    nerd:pending) printf '\357\200\227 ' ;;  # nf-fa-clock_o U+F017
+    nerd:worktree) printf '\357\201\274 ' ;; # nf-fa-folder_open U+F07C
+    nerd:title) printf '\357\201\265 ' ;;    # nf-fa-comment U+F075
+    nerd:category) printf '\357\201\273 ' ;; # nf-fa-folder U+F07B
+    nerd:sessions) printf '\357\222\211 ' ;; # nf-oct-terminal U+F489
+    *:repo) printf '📦 ' ;; *:branch) printf '🌿 ' ;; *:pr) printf '🔀 ' ;;
+    *:pass) printf '✅ ' ;; *:fail) printf '❌ ' ;; *:pending) printf '⏳ ' ;;
+    *:worktree) printf '📂 ' ;; *:title) printf '💬 ' ;; *:category) printf '📁 ' ;; *:sessions) printf '💻 ' ;;
+  esac
+}
 
 die() { # die <code> <message>
   local code=$1; shift
@@ -55,6 +76,7 @@ config_defaults() {
   cfg_claude_pane_pct="70"
   cfg_hub_key="C-q"
   cfg_status_bar="on"
+  cfg_icons="emoji"
   cfg_github="auto"
   cfg_hq_session="hq"
 }
@@ -92,6 +114,7 @@ config_doc() { # one-line description of a key (the comments of the config file)
     claude_pane_pct) echo "Height (%) of the Claude pane in a task window; a shell pane takes the rest." ;;
     hub_key) echo "tmux key that opens the agent-hub popup: C-q (no prefix needed), prefix:<key> (after the prefix) or off." ;;
     status_bar) echo "Agent counts at the end of the tmux status bar: on or off." ;;
+    icons) echo "Icons in the dashboard (repo, branch, PR, worktree, categories): emoji, nerd (needs a Nerd Font in the terminal) or off." ;;
     github) echo "Pull request status through the gh CLI: auto (when gh is logged in) or off." ;;
     hq_session) echo "Name of the hub tmux session." ;;
   esac

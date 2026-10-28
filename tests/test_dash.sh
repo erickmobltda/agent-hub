@@ -18,7 +18,7 @@ ids() { cut -f2 | tr '\n' ' ' | sed 's/ $//'; }
 assert_eq "g:dev t:dev/docs t:dev/api g:ops t:ops/infra g:*sessions s:scratch n:" "$(lines hq | ids)" "rows: tree order and ids"
 assert_eq "h: $(lines hq | ids)" "$(lines popup | ids)" "rows: the popup has the same rows, after a first one for the hub"
 assert_eq "+ new session  category → repo → name" "$(lines hq | tail -1 | cut -f4 | strip_ansi)" "rows: + new session last"
-assert_eq "▾ dev (2) ◐1 ●1" "$(lines hq | awk -F'\t' '$2 == "g:dev" { print $4 }' | strip_ansi)" "rows: group header with counts per state"
+assert_eq "▾ 📁 dev (2) ◐1 ●1" "$(lines hq | awk -F'\t' '$2 == "g:dev" { print $4 }' | strip_ansi)" "rows: group header with counts per state"
 assert_eq "  ├─ ◐ docs     svc-a    waiting 5m · Bash" "$(lines hq | awk -F'\t' '$2 == "t:dev/docs" { print $4 }' | strip_ansi | sed 's/  *$//')" "rows: task under its group: state, age, why it waits"
 assert_eq "  └─ ● api      svc-a    working 2m" "$(lines hq | awk -F'\t' '$2 == "t:dev/api" { print $4 }' | strip_ansi | sed 's/  *$//')" "rows: last task of a group"
 assert_eq "◐ waiting  dev/docs   svc-a    5m · Bash" "$(flat hq | awk -F'\t' '$2 == "t:dev/docs" { print $4 }' | strip_ansi | sed 's/  *$//')" "rows: flat view row"
@@ -27,9 +27,15 @@ assert_eq "$p_api" "$(lines hq | awk -F'\t' '$2 == "t:dev/api" { print $3 }')" "
 assert_contains "$(lines hq | awk -F'\t' '$1 == "s" { print $4 }' | strip_ansi)" "└─ ▪ scratch" "rows: plain sessions under 'sessions'"
 echo ops > "$AGENT_HUB_RUNTIME/collapsed"
 assert_eq "g:dev t:dev/docs t:dev/api g:ops g:*sessions s:scratch n:" "$(lines hq | ids)" "rows: a collapsed group hides its tasks"
-assert_contains "$(lines hq | awk -F'\t' '$2 == "g:ops" { print $4 }' | strip_ansi)" "▸ ops" "rows: collapsed header"
+assert_contains "$(lines hq | awk -F'\t' '$2 == "g:ops" { print $4 }' | strip_ansi)" "▸ 📁 ops" "rows: collapsed header"
 check "rows: the flat view still has them" sh -c "AGENT_HUB_DASH_MODE=hq AGENT_HUB_DASH_VIEW=flat '$AH' dash --lines | grep -q 't:ops/infra'"
 rm -f "$AGENT_HUB_RUNTIME/collapsed"
+assert_contains "$(lines hq | awk -F'\t' '$2 == "g:*sessions" { print $4 }' | strip_ansi)" "▾ 💻 sessions" "rows: the sessions header has its own icon"
+"$AH" config set icons nerd >/dev/null
+assert_eq "▾ $(printf '\357\201\273') dev (2) ◐1 ●1" "$(lines hq | awk -F'\t' '$2 == "g:dev" { print $4 }' | strip_ansi)" "rows: icons=nerd uses Nerd Font glyphs"
+"$AH" config set icons off >/dev/null
+assert_eq "▾ dev (2) ◐1 ●1" "$(lines hq | awk -F'\t' '$2 == "g:dev" { print $4 }' | strip_ansi)" "rows: icons=off has none"
+"$AH" config set icons emoji >/dev/null
 
 # Header: agents per state, over every group.
 AH_SUMMARY="$TMP/summary" AGENT_HUB_DASH_MODE=hq "$AH" dash --lines >/dev/null
@@ -48,8 +54,17 @@ tm send-keys -t "$p_api" "echo PREVIEW-MARKER" Enter
 wait_for 3 sh -c "tmux -L $AGENT_HUB_TMUX_SOCKET capture-pane -p -t $p_api | grep -q PREVIEW-MARKER"
 prev=$("$AH" dash --preview t t:dev/api "$p_api" working "$now" "" svc-a feat/api "$TMP/repos/svc-a--api" 42 OPEN pass "" "" | strip_ansi)
 assert_contains "$(printf '%s\n' "$prev" | head -1)" "PREVIEW" "preview: its title on the first line"
-assert_contains "$prev" "dev/api  working" "preview: header"
-assert_contains "$prev" "svc-a · feat/api  ·  PR #42 open · checks ✓" "preview: repo, branch and PR"
+assert_contains "$prev" "dev/api  ● working" "preview: header"
+assert_contains "$prev" "📦 svc-a   🌿 feat/api" "preview: repo and branch"
+assert_contains "$prev" "🔀 #42 open   ✅ checks pass" "preview: PR and checks"
+assert_contains "$prev" "📂 " "preview: worktree"
+raw=$("$AH" dash --preview t t:dev/api "$p_api" working "$now" "" svc-a feat/api "$TMP/repos/svc-a--api" 42 OPEN pass "https://x/pr/42" "")
+assert_contains "$raw" "$(printf '\033]8;;https://x/pr/42\033\\')" "preview: the PR is a terminal link"
+"$AH" config set icons off >/dev/null
+prev_off=$("$AH" dash --preview t t:dev/api "$p_api" working "$now" "" svc-a feat/api "$TMP/repos/svc-a--api" 42 OPEN fail "" "" | strip_ansi)
+assert_contains "$prev_off" "PR #42 open   checks failing" "preview: icons=off spells PR out"
+assert_not_contains "$prev_off" "📦" "preview: icons=off has no icons"
+"$AH" config set icons emoji >/dev/null
 assert_contains "$prev" "PREVIEW-MARKER" "preview: live screen of the Claude pane"
 assert_contains "$("$AH" dash --preview t t:x/y - stopped "" "" svc-a feat/y "$TMP/repos/svc-a" | strip_ansi)" "Enter starts it again" "preview: a stopped task explains Enter"
 prev=$("$AH" dash --preview g g:dev dev "" "" "" "" "" "" "" "" "" "" "" | strip_ansi)
@@ -58,6 +73,14 @@ assert_contains "$prev" "2 agents · ◐ 1 waiting · ● 1 working" "preview: t
 assert_contains "$prev" "◐ docs" "preview: the group's agents"
 assert_contains "$("$AH" dash --preview n n: - "" "" "" "" "" "" "" "" "" "" "" | strip_ansi)" "category" "preview: + new session explains the steps"
 assert_contains "$("$AH" dash --help | strip_ansi)" "rename a category or a task" "help: the keys"
+
+# w: copies the worktree's path and opens it in the IDE; the footer chips can be clicked.
+out=$(AGENT_HUB_DASH_INST=4243 "$AH" dash --do worktree t t:dev/api - "$TMP/repos/svc-a--api")
+assert_eq "trigger(ctrl-r)" "$out" "w: refreshes (the header shows what happened)"
+assert_eq "$TMP/repos/svc-a--api" "$(cat "$CLIP_STUB_LOG" 2>/dev/null)" "w: the worktree's path is copied"
+assert_eq "$TMP/repos/svc-a--api ." "$(cat "$IDEA_STUB_LOG" 2>/dev/null)" "w: idea . runs in the worktree"
+assert_contains "$(AGENT_HUB_DASH_INST=4243 "$AH" dash --header)" "opening it in IntelliJ IDEA" "w: and says so"
+assert_eq "trigger(o) trigger(w) trigger(enter) trigger(r)" "$(for w in PR worktree ⏎ rename; do "$AH" dash --click "$w"; done | tr '\n' ' ' | sed 's/ $//')" "click: a footer chip runs its key"
 
 # A real fzf (hub mode) in the isolated server, driven through its socket and keys, with a client
 # looking at it (in the hub, dialogs are tmux popups). The client runs in a "harness" session.
@@ -89,6 +112,7 @@ check "header: updated with the agents" screen_has "◐ 2 waiting"
 # The footer shows the keys of the selected row.
 wait_for 3 screen_has "rename"
 check "footer: a task's keys" sh -c "tmux -L $AGENT_HUB_TMUX_SOCKET capture-pane -p -t $dpane | grep -q 'send.*rename.*move.*close'"
+check "footer: and its PR and worktree" sh -c "tmux -L $AGENT_HUB_TMUX_SOCKET capture-pane -p -t $dpane | grep -q 'PR.*worktree'"
 fzf_post "$sock" 'pos(4)'
 wait_for 3 screen_has "new here"
 check "footer: a group's keys" screen_has "new here"
@@ -128,6 +152,13 @@ fzf_post "$sock" 'first'; sleep 0.2
 tm send-keys -t "$dpane" j
 wait_for 2 current_has t:dev/docs
 assert_eq "" "$(fzf_get "$sock" | jq -r .query)" "search: after esc, letters are keys again"
+tm send-keys -t "$dpane" /
+tm send-keys -t "$dpane" -l "dev"
+wait_for 2 sh -c "[ \"\$(curl -s -m 1 --unix-socket '$sock' http://localhost | jq -r .query)\" = dev ]"
+assert_eq "dev" "$(fzf_get "$sock" | jq -r .query)" "search: action letters (v, d...) are typed while searching"
+check "search: v typed in the search leaves the layout alone" [ ! -e "$AGENT_HUB_RUNTIME/layout" ]
+tm send-keys -t "$dpane" Escape
+wait_for 3 total_is 8
 tm send-keys -t "$dpane" Right
 wait_for 3 total_is 9
 

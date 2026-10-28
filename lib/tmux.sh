@@ -82,12 +82,22 @@ tmux_resurrect_hook() { # repair the hub after each tmux-resurrect restore, unle
   return 0
 }
 
+# Clickable links (OSC 8) in the dashboard: tmux passes them on only to terminals it knows support
+# them, and it doesn't detect Ghostty. Added once, only when missing; @agent_hub_links remembers
+# that it was us, so uninstall removes only our entry.
+TMUX_LINKS_FEATURE='xterm-ghostty:hyperlinks'
+tmux_links_apply() {
+  t show -s terminal-features 2>/dev/null | grep -qF "$TMUX_LINKS_FEATURE" && return 0
+  t set -as terminal-features "$TMUX_LINKS_FEATURE" && t set -g @agent_hub_links 1
+}
+
 cmd_tmux_init() {
   config_load || true
   t show -gv prefix >/dev/null 2>&1 || return 0 # no tmux server
   tmux_bind_hub_key
   tmux_status_apply
   tmux_resurrect_hook
+  tmux_links_apply
   return 0
 }
 
@@ -105,5 +115,10 @@ cmd_tmux_uninit() {
   t set -gu @agent_hub_status
   [ "$(t show -gqv @resurrect-hook-post-restore-all)" = "$(resurrect_hook_cmd)" ] &&
     t set -gu @resurrect-hook-post-restore-all
+  if [ "$(t show -gqv @agent_hub_links)" = 1 ]; then
+    t show -s terminal-features 2>/dev/null | awk -v f="$TMUX_LINKS_FEATURE" '$2 == f { print $1 }' |
+      while IFS= read -r k; do t set -su "$k"; done
+    t set -gu @agent_hub_links
+  fi
   return 0
 }

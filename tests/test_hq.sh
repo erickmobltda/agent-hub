@@ -30,6 +30,23 @@ tm resize-window -t "$hub_win" -x 90 -y 40
 wait_for 3 sh -c "! tmux -L $AGENT_HUB_TMUX_SOCKET capture-pane -p -t $(role_pane dashboard) | head -1 | grep -q PREVIEW"
 check "layout: preview below the list at 90 columns" sh -c "! tmux -L $AGENT_HUB_TMUX_SOCKET capture-pane -p -t $(role_pane dashboard) | head -1 | grep -q PREVIEW && tmux -L $AGENT_HUB_TMUX_SOCKET capture-pane -p -t $(role_pane dashboard) | grep -q PREVIEW"
 
+# v puts the preview below the list even on a wide pane, and back; the choice survives a restart.
+stacked() { ! top_line_has_preview && tmux -L "$AGENT_HUB_TMUX_SOCKET" capture-pane -p -t "$(role_pane dashboard)" | grep -q PREVIEW; }
+tm resize-window -t "$hub_win" -x 140 -y 40
+wait_for 3 top_line_has_preview
+tm send-keys -t "$(role_pane dashboard)" v
+wait_for 3 stacked
+check "layout: v stacks the preview at 140 columns" stacked
+assert_eq "down" "$(cat "$AGENT_HUB_RUNTIME/layout" 2>/dev/null)" "layout: the choice is saved"
+sock=$(dash_sock hq)
+pkill -f "fzf.*$(basename "$sock")" 2>/dev/null
+wait_for 5 sh -c "ls '$AGENT_HUB_RUNTIME'/dash-hq-*.sock 2>/dev/null | grep -qvxF '$sock'"
+wait_for 3 stacked
+check "layout: still stacked after the dashboard restarts" stacked
+tm send-keys -t "$(role_pane dashboard)" v
+wait_for 3 top_line_has_preview
+check "layout: v again puts it back on the right" top_line_has_preview
+
 # The hub pane survives Ctrl-C and even fzf dying.
 dash=$(role_pane dashboard)
 sock=$(dash_sock hq)

@@ -33,7 +33,7 @@ check "set keeps comments" grep -qxF '# comment' "$AGENT_HUB_CONFIG"
 "$AH" config set agent_cmd "claude --model opus" >/dev/null
 assert_eq "claude --model opus" "$("$AH" config get agent_cmd)" "set appends a missing key"
 assert_eq 1 "$(grep -c '^branch_prefix=' "$AGENT_HUB_CONFIG")" "set never duplicates a key"
-for bad in "claude_pane_pct 5" "worktree_location relative/path" "status_bar maybe" "github yes" "hub_key prefix:" "hub_key" "agent_cmd"; do
+for bad in "claude_pane_pct 5" "worktree_location relative/path" "status_bar maybe" "github yes" "hub_key prefix:" "hub_key" "agent_cmd" "icons fancy"; do
   # shellcheck disable=SC2086
   out=$("$AH" config set $bad "" 2>&1); rc=$?
   [ "$rc" = 1 ] && ok "set validates: $bad" || fail "set validates: $bad" "rc=$rc $out"
@@ -46,7 +46,7 @@ rm -f "$AGENT_HUB_CONFIG"
 assert_eq "subdirectory" "$("$AH" config get worktree_location)" "setup with flags"
 assert_eq "" "$("$AH" config get branch_prefix)" "setup accepts empty prefix"
 check "new config documents its keys" grep -q '^# Folder(s) that CONTAIN your git repos' "$AGENT_HUB_CONFIG"
-assert_eq 10 "$(grep -c '^[a-z_]*=' "$AGENT_HUB_CONFIG")" "new config lists every key"
+assert_eq 11 "$(grep -c '^[a-z_]*=' "$AGENT_HUB_CONFIG")" "new config lists every key"
 
 # config edit: opens $EDITOR, then validates.
 printf '#!/bin/bash\nsed -i "" "s/^claude_pane_pct=.*/claude_pane_pct=60/" "$1"\n' > "$TMP/ed.sh"; chmod +x "$TMP/ed.sh"

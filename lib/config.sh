@@ -25,6 +25,8 @@ config_validate() { # config_validate <key> <value>
       case "$2" in ''|*' '*|prefix:) die "$EX_ERR" "hub_key must be a tmux key (e.g. C-q), prefix:<key> or off" ;; esac ;;
     status_bar)
       case "$2" in on|off) ;; *) die "$EX_ERR" "status_bar must be on or off" ;; esac ;;
+    icons)
+      case "$2" in emoji|nerd|off) ;; *) die "$EX_ERR" "icons must be emoji, nerd or off" ;; esac ;;
     github)
       case "$2" in auto|off) ;; *) die "$EX_ERR" "github must be auto or off" ;; esac ;;
     hq_session)

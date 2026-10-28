@@ -64,4 +64,16 @@ fire_hook "$pane" '{"hook_event_name":"UserPromptSubmit"}'
 end=$(perl -MTime::HiRes=time -e 'printf "%d", time*1000')
 [ $((end - start)) -lt 500 ] && ok "hook runs in $((end - start))ms" || fail "hook too slow: $((end - start))ms"
 
+# Claude Code runs no hook when the user interrupts a turn: "working" with no output in the window
+# for a while is idle (shown so, and the pane option corrected). Output keeps it working.
+tm new-window -d -t scratch: -n quiet "sleep 60"
+tm new-window -d -t scratch: -n busy "while :; do echo tick; sleep 0.3; done"
+q=$(tm list-panes -t scratch:quiet -F '#{pane_id}'); b=$(tm list-panes -t scratch:busy -F '#{pane_id}')
+tm set -p -t "$q" @agent_status working \; set -p -t "$b" @agent_status working
+sleep 3
+out=$(AGENT_HUB_STUCK_AFTER=2 "$AH" list)
+assert_eq "idle" "$(printf '%s\n' "$out" | awk -F'\t' '$3 == "quiet" { print $4 }')" "interrupted: working with no output -> idle"
+assert_eq "working" "$(printf '%s\n' "$out" | awk -F'\t' '$3 == "busy" { print $4 }')" "interrupted: an agent with output stays working"
+assert_eq "idle" "$(pane_opt "$q" @agent_status)" "interrupted: the pane option is corrected (status bar too)"
+
 finish

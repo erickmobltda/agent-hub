@@ -42,3 +42,7 @@ Plan: ~/.claude/plans/quero-que-vc-revise-tidy-lobster.md · branch `feat/hub-v2
 - [x] merge to main (local fast-forward)
 - [x] user's hub is dashboard-only
 - [x] publish: public repo erickmobltda/agent-hub, `main` = v1 baseline (9f53ffc), PR #1 from `feat/hub-v2`
+- [x] `v`: preview on the right or below the list, remembered across restarts
+- [x] icons (`icons = emoji | nerd | off`) in the preview and on category headers; close unchanged (it already removes the worktree)
+- [x] interrupted agents: `working` with no window output for 2 min becomes `idle` (Claude Code runs no hook on Esc)
+- [x] PR as a terminal link (tmux-init enables hyperlinks for Ghostty); `w` copies the worktree path and opens IntelliJ IDEA; footer chips clickable

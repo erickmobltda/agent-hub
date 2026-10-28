@@ -90,6 +90,7 @@ assert_contains "$(tm list-keys -T root C-q)" "$ROOT/bin/agent-hub dash --popup"
 assert_eq '#(/x/continuum_save.sh)#{E:@x}  #{E:@agent_hub_status}' "$(tm show -gv status-right)" "tmux line: v1 segment out, ours in, continuum kept"
 "$AH" tmux-init; "$AH" tmux-init
 assert_eq 1 "$(tm show -gv status-right | grep -o '@agent_hub_status' | wc -l | tr -d ' ')" "tmux-init twice: the segment appears once"
+assert_eq 1 "$(tm show -s terminal-features | grep -c 'xterm-ghostty:hyperlinks')" "tmux-init: links reach Ghostty (once)"
 assert_eq "$(printf '%q' "$ROOT/bin/agent-hub") heal >/dev/null 2>&1" "$(tm show -gv @resurrect-hook-post-restore-all)" "tmux-init: heals the hub after a tmux-resurrect restore"
 tm set -p -t "$pane" @agent_status waiting
 assert_contains "$(tm display -p '#{E:@agent_hub_status}')" "◐1" "status: counts agents with no process"
@@ -117,6 +118,7 @@ check "uninstall: tmux.conf restored" cmp -s "$conf" "$TMP/tmux.orig"
 [ -z "$(tm list-keys -T prefix a 2>/dev/null)" ] && ok "uninstall: popup key unbound live" || fail "uninstall: popup key unbound live"
 assert_eq '#(/x/continuum_save.sh)#{E:@x} ' "$(tm show -gv status-right)" "uninstall: status segment removed live"
 assert_eq "" "$(tm show -gqv @resurrect-hook-post-restore-all)" "uninstall: resurrect hook removed"
+assert_eq 0 "$(tm show -s terminal-features | grep -c 'xterm-ghostty:hyperlinks')" "uninstall: the links feature removed"
 check "uninstall: links removed" sh -c "[ ! -e '$TMP/bin/agent-hub' ] && [ ! -e '$TMP/skills/agent-hub' ]"
 check "uninstall: config kept" [ -f "$AGENT_HUB_CONFIG" ]
 
