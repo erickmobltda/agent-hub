@@ -18,7 +18,7 @@ Pure bash 3.2 plus tools you already have: tmux ≥ 3.3, fzf ≥ 0.73, git, jq, 
 ## Install
 
 ```sh
-git clone <this repo> && cd agent-hub
+git clone https://github.com/erickmobltda/agent-hub && cd agent-hub
 ./install.sh          # shows each change, asks, and backs files up
 agent-hub setup       # where your repos are, branch prefix, where worktrees go
 agent-hub             # open the hub
@@ -179,4 +179,6 @@ tests/run.sh                 # everything
 tests/run.sh test_hook.sh    # one file
 ```
 
-Pure bash on an isolated tmux server (`tmux -L ahtest<pid>`), with a temporary HOME, temporary repos with a local bare origin, and stub `claude`, `gh` and `open`. The popup tests attach a real nested tmux client and press Ctrl+Q through it. Every script passes `bash -n` first; `shellcheck` runs when installed.
+Pure bash on an isolated tmux server (`tmux -L ahtest<pid>`), with a temporary HOME, temporary repos with a local bare origin, and stub `claude`, `gh`, `open`, `pbcopy` and `idea`. The popup tests attach a real nested tmux client and press Ctrl+Q through it. Every script passes `bash -n` first; `shellcheck` runs when installed.
+
+The screenshots in `docs/images/` come from `docs/screenshots/make.sh`, which builds a demo on its own tmux server and photographs it. The demo has fake repos, agents and pull requests, and nothing of yours is read or changed. It needs macOS, Google Chrome (headless) and python3; for the icons, MesloLGS Nerd Font Mono.
