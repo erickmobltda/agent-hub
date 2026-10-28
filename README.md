@@ -21,14 +21,15 @@ Pure bash 3.2 plus tools you already have: tmux ≥ 3.3, fzf ≥ 0.73, git, jq, 
     └─ ▪ notes        2 windows  ~/notes                   │
   + new session  category → repo → name                    │
 ───────────────────────────────────────────────────────────│
-  ⏎ open  s send  r rename  m move  d close  o PR  n new   │
+  ⏎ open  s send  r rename  m move  d close                │
+  o PR  w worktree  n new                                  │
   / search  v layout  ? help  q quit                       │
 ```
 
 - **Header:** the agents per state, then the result of the last action.
 - **Left:** each category (a tmux session) with its tasks; the ones that need you come first. `▸` is folded. Your other tmux sessions are under `sessions`.
 - **Right:** for a task, its repo, branch, PR and checks, worktree, and the agent's screen; for a category, its agents. The icons are emoji by default; `agent-hub config set icons nerd` uses Nerd Font glyphs instead (your terminal needs a Nerd Font), and `off` removes them.
-- **Footer:** the keys of the selected row.
+- **Footer:** the keys of the selected row. They can be clicked too.
 
 ## Install
 
@@ -52,7 +53,8 @@ Each edit shows the diff, asks first and keeps a `*.agent-hub.bak.<epoch>` backu
 The line only runs `agent-hub tmux-init`, which:
 - binds `hub_key` (default **Ctrl+Q**, no prefix needed) to the popup. It never replaces a key you already bound, and refuses your prefix key;
 - appends ` #{E:@agent_hub_status}` to `status-right` once: `◐2 ✓1 ●3` (waiting, done, working), counted by tmux itself with no extra process. Turn it off with `status_bar=off`;
-- if tmux-resurrect is installed and `@resurrect-hook-post-restore-all` is unset, uses it to repair the hub after every restore.
+- if tmux-resurrect is installed and `@resurrect-hook-post-restore-all` is unset, uses it to repair the hub after every restore;
+- adds `xterm-ghostty:hyperlinks` to `terminal-features` once, so the dashboard's links reach Ghostty (tmux doesn't detect that Ghostty supports them). It takes effect the next time you attach.
 
 Nothing else is changed: no other options, and no other keys. Agent windows only get `automatic-rename off` so they keep their task name.
 
@@ -83,7 +85,8 @@ There is no input line: letters are actions, and `/` opens the search.
 | d | close a task · delete a plain session |
 | m | move a task to another category |
 | s | send a message to the agent without leaving the dashboard |
-| o | open its pull request |
+| o | open its pull request (or ⌘-click it in the preview) |
+| w | copy the worktree's path and open it in IntelliJ IDEA, when it is installed |
 | / | search by task, category, repo, state or PR. The tree becomes a flat list, so tasks of folded categories are found too. Esc goes back to the tree |
 | v | preview on the right or below the list (remembered) |
 | Alt+Enter | open zoomed |
@@ -112,7 +115,7 @@ They come from Claude Code hooks; the hook takes about 20 ms, prints nothing and
 | ○ `idle` | done and seen, or fresh |
 | ◌ `stopped` | Claude exited, or the window is gone (tmux restarted) |
 
-`/clear` and compaction keep the agent listed. A Claude you start by hand in any pane shows up too, under its session, until it exits.
+Interrupting Claude (Esc) runs no hook, so an agent that shows `working` but has had nothing new on its screen for 2 minutes is shown, and recorded, as `idle`. `/clear` and compaction keep the agent listed. A Claude you start by hand in any pane shows up too, under its session, until it exits.
 
 ## Configuration
 

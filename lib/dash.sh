@@ -17,7 +17,7 @@
 # the refresh, after a reload through the `load` event: a change made while fzf reloads with
 # tracking on would be lost.
 
-DASH_LETTERS='j,k,h,l,n,r,d,m,s,o,q,v,?,/,tab'
+DASH_LETTERS='j,k,h,l,n,r,d,m,s,o,w,q,v,?,/,tab'
 # Leaving the search: clear it, give the letters back their actions, hide the input. fzf undoes a
 # query change made in the same action chain as hide-input, so that one comes a moment later.
 DASH_SEARCH_OFF="clear-query+rebind($DASH_LETTERS)+bg-transform(echo hide-input)"
@@ -58,7 +58,6 @@ dash_views() {
   local f view
   f=$(dash_rows_file)
   view=$(cat "$f.view" 2>/dev/null); [ "$view" = flat ] || view=tree
-  [ -s "$f.view" ] || echo tree > "$f.view"
   AH_SUMMARY="$f.summary" rows "${AGENT_HUB_DASH_MODE:-popup}" tree "$f.flat.$$" > "$f.tree.$$" 2>/dev/null
   if cmp -s "$f.$view.$$" "$f.$view"; then
     mv "$f.tree.$$" "$f.tree"; mv "$f.flat.$$" "$f.flat"
@@ -161,6 +160,7 @@ cmd_dash() {
     --dialog) shift; dash_dialog "$@" ;;
     --help) dash_help ;;
     --header) dash_header ;;
+    --click) dash_click "${2:-}" ;;
     --lines) rows "${AGENT_HUB_DASH_MODE:-popup}" "${AGENT_HUB_DASH_VIEW:-tree}" ;;
     *) die "$EX_ERR" "usage: dash [--hq|--popup]" ;;
   esac
@@ -185,15 +185,16 @@ dash_run() { # dash_run <hq|popup>
   unset FZF_DEFAULT_OPTS FZF_DEFAULT_OPTS_FILE
   # Footer: the keys of the selected row (chosen on focus, without starting agent-hub).
   global=$(dash_keys / search v layout '?' help q quit)
-  AH_KEYS_T="$(dash_keys ⏎ open s send r rename m move d close o PR n new)
+  AH_KEYS_T="$(dash_keys ⏎ open s send r rename m move d close)
+$(dash_keys o PR w worktree n new)
 $global"
   AH_KEYS_G="$(dash_keys ⏎ fold n 'new here' r rename d delete)
 $global"
   AH_KEYS_S="$(dash_keys ⏎ switch d delete n new)
 $global"
-  AH_KEYS_N="$(dash_keys ⏎ 'new session' j/k move)
+  AH_KEYS_N="$(dash_keys ⏎ 'new session')
 $global"
-  AH_KEYS_H="$(dash_keys ⏎ 'go to the hub' j/k move)
+  AH_KEYS_H="$(dash_keys ⏎ 'go to the hub')
 $global"
   AH_KEYS_SEARCH="$(dash_keys ⏎ open esc 'back to the tree')"
   export AH_KEYS_T AH_KEYS_G AH_KEYS_S AH_KEYS_N AH_KEYS_H AH_KEYS_SEARCH
@@ -224,7 +225,7 @@ $global"
     --bind='every(5):bg-transform:[ "${FZF_IDLE_TIME:-0}" -ge 2 ] && "$AGENT_HUB_BIN" dash --refresh' \
     --bind='load:untrack-current+transform-header:cat "$AGENT_HUB_DASH_ROWS.header" 2>/dev/null' \
     --bind='focus:transform-footer:if [ "$FZF_INPUT_STATE" != hidden ]; then printf %s "$AH_KEYS_SEARCH"; else case {1} in t|p) printf %s "$AH_KEYS_T" ;; g) printf %s "$AH_KEYS_G" ;; s) printf %s "$AH_KEYS_S" ;; h) printf %s "$AH_KEYS_H" ;; *) printf %s "$AH_KEYS_N" ;; esac; fi' \
-    --bind='change:transform:v=tree; [ -n {q} ] && v=flat; f=$AGENT_HUB_DASH_ROWS; if [ "$(cat "$f.view")" != "$v" ]; then echo "$v" > "$f.view"; echo "reload-sync(cat \"$f.$v\")+first"; else echo first; fi' \
+    --bind='change:transform:v=tree; [ -n {q} ] && v=flat; f=$AGENT_HUB_DASH_ROWS; if [ "$(cat "$f.view")" != "$v" ]; then echo "$v" > "$f.view.$$"; mv "$f.view.$$" "$f.view"; echo "reload-sync(cat \"$f.$v\")+first"; else echo first; fi' \
     --bind="/:show-input+unbind($DASH_LETTERS)+transform-footer:printf %s \"\$AH_KEYS_SEARCH\"" \
     --bind="esc:transform:$esc" --bind="$ctrlc" \
     --bind='j:down,k:up' \
@@ -234,6 +235,8 @@ $global"
     --bind='h,left:transform:[ -z {q} ] && [ {1} = g ] && "$AGENT_HUB_BIN" dash --do collapse {1} {2} {3} || { [ "$FZF_INPUT_STATE" != hidden ] && echo backward-char; }' \
     --bind='l,right:transform:[ -z {q} ] && [ {1} = g ] && "$AGENT_HUB_BIN" dash --do expand {1} {2} {3} || { [ "$FZF_INPUT_STATE" != hidden ] && echo forward-char; }' \
     --bind='o:transform:"$AGENT_HUB_BIN" dash --do pr {1} {2} {3} {9} {10} {14} {16}' \
+    --bind='w:transform:"$AGENT_HUB_BIN" dash --do worktree {1} {2} {3} {10}' \
+    --bind='click-footer:transform:"$AGENT_HUB_BIN" dash --click "$FZF_CLICK_FOOTER_WORD"' \
     --bind='q:transform:"$AGENT_HUB_BIN" dash --do quit {1} {2} {3}' \
     --bind='v:transform:"$AGENT_HUB_BIN" dash --do layout {1} {2} {3}' \
     --bind='?:preview:"$AGENT_HUB_BIN" dash --help' \
@@ -280,11 +283,14 @@ ${K}agent-hub${R}  ${D}keys${R}
   ${K}m${R}           move a task to another category
   ${K}s${R}           send a message to an agent
   ${K}o${R}           open the pull request
+  ${K}w${R}           copy the worktree's path and open it in IntelliJ IDEA (when installed)
   ${K}/${R}           search (Esc: back to the tree)
   ${K}v${R}           preview on the right or below the list (remembered)
   ${K}alt-⏎${R}       open zoomed
   ${K}^r${R}          refresh
   ${K}q${R}           quit (in the hub: back to the previous session)
+
+${D}The keys in the footer can be clicked too. ⌘-click the PR in the preview opens it.${R}
 
 ${D}States: ◐ waiting for you · ✗ error · ✓ done · ● working · ○ idle · ◌ stopped${R}
 EOF
@@ -369,7 +375,10 @@ dash_preview() {
   if [ -n "$prn" ]; then
     case "$prs" in OPEN) PC='\033[32m' ;; MERGED) PC='\033[35m' ;; CLOSED) PC='\033[31m' ;; *) PC='\033[90m' ;; esac
     pr=$(icon pr); [ -n "$pr" ] || pr='PR '
-    printf "${PC}%s#%s %s${R}" "$pr" "$prn" "$(printf '%s' "$prs" | tr '[:upper:]' '[:lower:]')"
+    pr="$pr#$prn $(printf '%s' "$prs" | tr '[:upper:]' '[:lower:]')"
+    # A terminal link (OSC 8): ⌘-click opens the PR.
+    [ -n "${13:-}" ] && pr=$(printf '\033]8;;%s\033\\%s\033]8;;\033\\' "${13}" "$pr")
+    printf "${PC}%s${R}" "$pr"
     case "$prc" in
       pass) printf "   \033[32m%schecks pass${R}" "$(icon pass)" ;;
       fail) printf "   \033[31m%schecks failing${R}" "$(icon fail)" ;;
@@ -403,6 +412,7 @@ dash_do() {
     open) dash_open "$kind" "$id" "$target" 0 ;;
     zoom) dash_open "$kind" "$id" "$target" 1 ;;
     pr) dash_pr "$kind" "$@" ;;
+    worktree) dash_worktree "$kind" "${1:-}" ;;
     quit) dash_quit ;;
     layout) printf 'change-preview-window:%s\n' "$(dash_layout toggle)" ;;
     new) ui_new_agent "${1:-}" "${2:-}" ;;
@@ -444,6 +454,29 @@ dash_open() { # dash_open <kind> <id> <target> <zoom>
   else
     echo 'trigger(ctrl-r)'
   fi
+}
+
+dash_worktree() { # dash_worktree <kind> <worktree>: copies its path; opens it in IntelliJ IDEA when installed
+  local kind=$1 wt=$2 ide="" tilde='~'
+  echo 'trigger(ctrl-r)'
+  case "$kind" in t) ;; *) dash_msg "worktrees belong to tasks"; return ;; esac
+  [ -d "$wt" ] || { dash_msg "✗ the worktree is gone: $wt"; return; }
+  if command -v pbcopy >/dev/null 2>&1; then printf '%s' "$wt" | pbcopy
+  else printf '%s' "$wt" | t load-buffer -w -; fi
+  if command -v idea >/dev/null 2>&1; then (cd "$wt" && idea . >/dev/null 2>&1 &); ide=1
+  elif [ "$(uname)" = Darwin ] && open -a "IntelliJ IDEA" "$wt" >/dev/null 2>&1; then ide=1
+  fi
+  dash_msg "copied ${wt/#$HOME/$tilde}${ide:+ · opening it in IntelliJ IDEA}"
+}
+
+dash_click() { # dash_click <word clicked in the footer>: runs the key of that chip
+  case "$1" in
+    ⏎|open|fold|switch|session|hub) echo 'trigger(enter)' ;;
+    s|send) echo 'trigger(s)' ;; r|rename) echo 'trigger(r)' ;; m|move) echo 'trigger(m)' ;;
+    d|close|delete) echo 'trigger(d)' ;; o|PR) echo 'trigger(o)' ;; w|worktree) echo 'trigger(w)' ;;
+    n|new|here) echo 'trigger(n)' ;; /|search) echo 'trigger(/)' ;; v|layout) echo 'trigger(v)' ;;
+    '?'|help) echo 'trigger(?)' ;; q|quit) echo 'trigger(q)' ;; esc|back|tree) echo 'trigger(esc)' ;;
+  esac
 }
 
 dash_pr() { # dash_pr <kind> <branch> <worktree> <url> <repo path>

@@ -58,6 +58,8 @@ assert_contains "$prev" "dev/api  ● working" "preview: header"
 assert_contains "$prev" "📦 svc-a   🌿 feat/api" "preview: repo and branch"
 assert_contains "$prev" "🔀 #42 open   ✅ checks pass" "preview: PR and checks"
 assert_contains "$prev" "📂 " "preview: worktree"
+raw=$("$AH" dash --preview t t:dev/api "$p_api" working "$now" "" svc-a feat/api "$TMP/repos/svc-a--api" 42 OPEN pass "https://x/pr/42" "")
+assert_contains "$raw" "$(printf '\033]8;;https://x/pr/42\033\\')" "preview: the PR is a terminal link"
 "$AH" config set icons off >/dev/null
 prev_off=$("$AH" dash --preview t t:dev/api "$p_api" working "$now" "" svc-a feat/api "$TMP/repos/svc-a--api" 42 OPEN fail "" "" | strip_ansi)
 assert_contains "$prev_off" "PR #42 open   checks failing" "preview: icons=off spells PR out"
@@ -71,6 +73,14 @@ assert_contains "$prev" "2 agents · ◐ 1 waiting · ● 1 working" "preview: t
 assert_contains "$prev" "◐ docs" "preview: the group's agents"
 assert_contains "$("$AH" dash --preview n n: - "" "" "" "" "" "" "" "" "" "" "" | strip_ansi)" "category" "preview: + new session explains the steps"
 assert_contains "$("$AH" dash --help | strip_ansi)" "rename a category or a task" "help: the keys"
+
+# w: copies the worktree's path and opens it in the IDE; the footer chips can be clicked.
+out=$(AGENT_HUB_DASH_INST=4243 "$AH" dash --do worktree t t:dev/api - "$TMP/repos/svc-a--api")
+assert_eq "trigger(ctrl-r)" "$out" "w: refreshes (the header shows what happened)"
+assert_eq "$TMP/repos/svc-a--api" "$(cat "$CLIP_STUB_LOG" 2>/dev/null)" "w: the worktree's path is copied"
+assert_eq "$TMP/repos/svc-a--api ." "$(cat "$IDEA_STUB_LOG" 2>/dev/null)" "w: idea . runs in the worktree"
+assert_contains "$(AGENT_HUB_DASH_INST=4243 "$AH" dash --header)" "opening it in IntelliJ IDEA" "w: and says so"
+assert_eq "trigger(o) trigger(w) trigger(enter) trigger(r)" "$(for w in PR worktree ⏎ rename; do "$AH" dash --click "$w"; done | tr '\n' ' ' | sed 's/ $//')" "click: a footer chip runs its key"
 
 # A real fzf (hub mode) in the isolated server, driven through its socket and keys, with a client
 # looking at it (in the hub, dialogs are tmux popups). The client runs in a "harness" session.
@@ -102,6 +112,7 @@ check "header: updated with the agents" screen_has "◐ 2 waiting"
 # The footer shows the keys of the selected row.
 wait_for 3 screen_has "rename"
 check "footer: a task's keys" sh -c "tmux -L $AGENT_HUB_TMUX_SOCKET capture-pane -p -t $dpane | grep -q 'send.*rename.*move.*close'"
+check "footer: and its PR and worktree" sh -c "tmux -L $AGENT_HUB_TMUX_SOCKET capture-pane -p -t $dpane | grep -q 'PR.*worktree'"
 fzf_post "$sock" 'pos(4)'
 wait_for 3 screen_has "new here"
 check "footer: a group's keys" screen_has "new here"

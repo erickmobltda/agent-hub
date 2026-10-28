@@ -16,10 +16,15 @@ export AGENT_HUB_TMUX_CONF="$TMP/tmux.conf"
 export AGENT_HUB_RUNTIME="$RUN"
 export HOME="$TMP/home" SHELL=/bin/bash
 export CLAUDE_STUB_LOG="$TMP/claude.log" GH_STUB_LOG="$TMP/gh.log" OPEN_STUB_LOG="$TMP/open.log"
+export CLIP_STUB_LOG="$TMP/clipboard.log" IDEA_STUB_LOG="$TMP/idea.log"
+# Tests set agent states by hand on stub panes that print nothing: never treat them as interrupted
+# (test_hook checks that rule with its own threshold).
+export AGENT_HUB_STUCK_AFTER=86400
 mkdir -p "$HOME"
 unset TMUX TMUX_PANE CLAUDECODE FZF_DEFAULT_OPTS FZF_DEFAULT_OPTS_FILE GH_STUB_JSON GH_STUB_URL VISUAL EDITOR
 
-# Stubs: tests must never start the real claude, call GitHub or open a browser.
+# Stubs: tests must never start the real claude, call GitHub, open a browser or an IDE, or touch
+# the clipboard.
 mkdir -p "$TMP/stubbin"
 cat > "$TMP/stubbin/claude" <<'EOF'
 #!/bin/bash
@@ -54,7 +59,15 @@ cat > "$TMP/stubbin/open" <<'EOF'
 #!/bin/bash
 echo "$*" >> "${OPEN_STUB_LOG:-/dev/null}"
 EOF
-chmod +x "$TMP/stubbin/claude" "$TMP/stubbin/gh" "$TMP/stubbin/open"
+cat > "$TMP/stubbin/pbcopy" <<'EOF'
+#!/bin/bash
+cat > "${CLIP_STUB_LOG:-/dev/null}"
+EOF
+cat > "$TMP/stubbin/idea" <<'EOF'
+#!/bin/bash
+echo "$PWD $*" >> "${IDEA_STUB_LOG:-/dev/null}"
+EOF
+chmod +x "$TMP/stubbin/claude" "$TMP/stubbin/gh" "$TMP/stubbin/open" "$TMP/stubbin/pbcopy" "$TMP/stubbin/idea"
 export PATH="$TMP/stubbin:$PATH"
 
 FAILS=0
